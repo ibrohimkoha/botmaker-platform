@@ -8,6 +8,31 @@ const (
 	StatusPaused = "paused"
 )
 
+// Built-in template identifiers. Every name here has a matching
+// implementation registered by the engine.
+const (
+	TemplateAniTez          = "anitez"
+	TemplateAniXUltra       = "anixultra"
+	TemplateAIAssistant     = "ai_assistant"
+	TemplateEcommerceShop   = "ecommerce_shop"
+	TemplateFeedbackSupport = "feedback_support"
+	TemplateChannelManager  = "channel_manager"
+	TemplateCustomBuilder   = "custom_builder"
+)
+
+// AllTemplateNames returns every built-in template identifier.
+func AllTemplateNames() []string {
+	return []string{
+		TemplateAniTez,
+		TemplateAniXUltra,
+		TemplateAIAssistant,
+		TemplateEcommerceShop,
+		TemplateFeedbackSupport,
+		TemplateChannelManager,
+		TemplateCustomBuilder,
+	}
+}
+
 // Bot is a registered Telegram bot managed by the platform.
 type Bot struct {
 	ID         int64     `json:"id"`
@@ -78,4 +103,48 @@ type Broadcast struct {
 	Sent      int       `json:"sent"`
 	Failed    int       `json:"failed"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// Order statuses.
+const (
+	OrderPending = "pending"
+	OrderPaid    = "paid"
+)
+
+// OrderItem is one product line of an order.
+type OrderItem struct {
+	Code  string `json:"code"`
+	Title string `json:"title"`
+	Price int64  `json:"price"`
+	Qty   int    `json:"qty"`
+}
+
+// Order is a purchase placed through an ecommerce bot. Items are stored
+// as a JSON document in the database.
+type Order struct {
+	ID         int64       `json:"id"`
+	BotID      int64       `json:"bot_id"`
+	TelegramID int64       `json:"telegram_id"`
+	Username   string      `json:"username,omitempty"`
+	Items      []OrderItem `json:"items"`
+	Total      int64       `json:"total"`
+	Status     string      `json:"status"`
+	CreatedAt  time.Time   `json:"created_at"`
+}
+
+// Ticket statuses.
+const (
+	TicketOpen   = "open"
+	TicketClosed = "closed"
+)
+
+// Ticket is a support conversation between a user and the bot admins.
+type Ticket struct {
+	ID         int64     `json:"id"`
+	BotID      int64     `json:"bot_id"`
+	TelegramID int64     `json:"telegram_id"`
+	Username   string    `json:"username,omitempty"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }

@@ -101,3 +101,16 @@ func TopRated(catalog []Title, limit int) []Title {
 	}
 	return sorted
 }
+
+// AllTemplates returns every built-in bot template in registration order.
+func AllTemplates() []Template {
+	return []Template{
+		&AniTez{},
+		&AniXUltra{},
+		&AIAssistant{},
+		&EcommerceShop{},
+		&FeedbackSupport{},
+		&ChannelManager{},
+		&CustomBuilder{},
+	}
+}

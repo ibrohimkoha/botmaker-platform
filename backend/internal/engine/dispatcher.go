@@ -31,6 +31,9 @@ var allowedUpdates = []string{
 	"inline_query",
 	"chosen_inline_result",
 	"callback_query",
+	"chat_member",
+	"chat_join_request",
+	"my_chat_member",
 }
 
 // Engine owns every live Telegram bot. All bots share a single webhook
@@ -59,6 +62,14 @@ func New(store *storage.Store, cfg config.Config) *Engine {
 // RegisterTemplate makes a template available to new bots.
 func (e *Engine) RegisterTemplate(t templates.Template) {
 	e.templates[t.Name()] = t
+}
+
+// RegisterBuiltinTemplates registers every template shipped with the
+// platform in one call.
+func (e *Engine) RegisterBuiltinTemplates() {
+	for _, t := range templates.AllTemplates() {
+		e.RegisterTemplate(t)
+	}
 }
 
 // HasTemplate reports whether a template with the given name exists.
@@ -213,6 +224,7 @@ func (e *Engine) activate(b *models.Bot) error {
 		BotID:    b.ID,
 		AdminIDs: e.cfg.AdminIDs,
 		Store:    e.store,
+		AI:       e.cfg.AI,
 	}); err != nil {
 		return fmt.Errorf("apply template %q: %w", b.Template, err)
 	}

@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'BotMaker AI — Telegram Bot Dashboard',
+  title: '🤖 BotMaker AI — Professional Telegram Botlar Konstruktori',
   description:
-    'Telegram botlarini yaratish, boshqarish, webhook ulash va broadcast yuborish uchun zamonaviy dashboard platformasi',
+    'Bozor narxidan 10x arzonroq, yuqori sifatli va Webhook asosida chaqmoqdek tez ishlovchi Telegram botlar yarating — AI chatbot, e-commerce, feedback, obuna menejeri va boshqa shablonlar.',
 };
 
 export const viewport: Viewport = {

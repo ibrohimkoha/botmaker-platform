@@ -3,12 +3,14 @@ package templates
 import (
 	"fmt"
 	"html"
+	"log"
 	"regexp"
 	"strings"
 	"time"
 
 	tele "gopkg.in/telebot.v3"
 
+	"botmaker-backend/config"
 	"botmaker-backend/internal/models"
 	"botmaker-backend/internal/storage"
 )
@@ -28,6 +30,8 @@ type Options struct {
 	BotID    int64
 	AdminIDs []int64
 	Store    *storage.Store
+	// AI configures the LLM backend used by the ai_assistant template.
+	AI config.AIConfig
 }
 
 // Spec describes the concrete behaviour of a single template.
@@ -68,16 +72,11 @@ func isAdmin(opts Options, c tele.Context) bool {
 	return false
 }
 
-// applyCore registers the handlers shared by every template: start,
-// help, search, code lookup, stats, admin panel, broadcast, inline
+// applyCore registers the handlers shared by the media-catalog templates:
+// start, help, search, code lookup, stats, admin panel, broadcast, inline
 // search and the plain-text fallback.
 func applyCore(bot *tele.Bot, spec Spec, opts Options) {
-	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
-		return func(c tele.Context) error {
-			trackUser(opts, c)
-			return next(c)
-		}
-	})
+	applyCommon(bot, spec.Name, opts)
 
 	bot.Handle("/start", func(c tele.Context) error {
 		name := ""
@@ -135,51 +134,6 @@ func applyCore(bot *tele.Bot, spec Spec, opts Options) {
 			return c.Send(fmt.Sprintf("😕 <code>%s</code> kodi topilmadi.\n\nTo'g'ri format: <code>/code %s-001</code>", esc(code), spec.CodePrefix))
 		}
 		return c.Send(formatCard(spec, t))
-	})
-
-	bot.Handle("/stats", func(c tele.Context) error {
-		st, err := opts.Store.GetStats(opts.BotID)
-		if err != nil {
-			return c.Send("❌ Statistikani o'qib bo'lmadi.")
-		}
-		return c.Send(formatStats(spec, st))
-	})
-
-	bot.Handle("/admin", func(c tele.Context) error {
-		if !isAdmin(opts, c) {
-			return c.Send("⛔ Bu buyruq faqat adminlar uchun.")
-		}
-		st, err := opts.Store.GetStats(opts.BotID)
-		if err != nil {
-			return c.Send("❌ Statistikani o'qib bo'lmadi.")
-		}
-		return c.Send(fmt.Sprintf("🛡️ <b>Admin panel</b>\n\n%s\n\n📣 Barcha foydalanuvchilarga xabar yuborish:\n<code>/broadcast &lt;matn&gt;</code>",
-			formatStats(spec, st)))
-	})
-
-	bot.Handle("/broadcast", func(c tele.Context) error {
-		if !isAdmin(opts, c) {
-			return c.Send("⛔ Bu buyruq faqat adminlar uchun.")
-		}
-		msg := strings.TrimSpace(c.Data())
-		if msg == "" {
-			return c.Send("ℹ️ Xabar matnini kiriting: <code>/broadcast &lt;matn&gt;</code>")
-		}
-		ids, err := opts.Store.ListUserTelegramIDs(opts.BotID)
-		if err != nil {
-			return c.Send("❌ Foydalanuvchilar ro'yxatini o'qib bo'lmadi.")
-		}
-		rec := &models.Broadcast{
-			BotID:   opts.BotID,
-			Message: msg,
-			Status:  models.BroadcastRunning,
-			Total:   len(ids),
-		}
-		if err := opts.Store.CreateBroadcast(rec); err != nil {
-			return c.Send("❌ Broadcast yaratilmadi.")
-		}
-		go runBroadcast(bot, opts.Store, rec, ids)
-		return c.Send(fmt.Sprintf("📣 Broadcast boshlandi: <b>%d</b> foydalanuvchiga yuborilmoqda…", len(ids)))
 	})
 
 	bot.Handle(tele.OnText, func(c tele.Context) error {
@@ -281,7 +235,7 @@ func formatCard(spec Spec, t Title) string {
 		t.EpisodeLine(), esc(strings.Join(t.Genres, ", ")), esc(t.Description), t.Code)
 }
 
-func formatStats(spec Spec, st *models.Stats) string {
+func formatStats(name string, st *models.Stats) string {
 	return fmt.Sprintf(`📊 <b>%s — statistika</b>
 
 👥 Foydalanuvchilar: %d
@@ -290,8 +244,73 @@ func formatStats(spec Spec, st *models.Stats) string {
 🔎 Qidiruvlar: %d
 🔢 Kod bo'yicha: %d
 📢 Broadcastlar: %d`,
-		esc(spec.Name), st.TotalUsers, st.NewUsersToday, st.TotalMessages,
+		esc(name), st.TotalUsers, st.NewUsersToday, st.TotalMessages,
 		st.TotalSearches, st.TotalCodeLookups, st.BroadcastsSent)
+}
+
+// applyCommon registers the handlers shared by every template: user
+// tracking, stats, the admin panel and broadcasts.
+func applyCommon(bot *tele.Bot, name string, opts Options) {
+	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
+		return func(c tele.Context) error {
+			trackUser(opts, c)
+			return next(c)
+		}
+	})
+
+	bot.Handle("/stats", func(c tele.Context) error {
+		st, err := opts.Store.GetStats(opts.BotID)
+		if err != nil {
+			return c.Send("❌ Statistikani o'qib bo'lmadi.")
+		}
+		return c.Send(formatStats(name, st))
+	})
+
+	bot.Handle("/admin", func(c tele.Context) error {
+		if !isAdmin(opts, c) {
+			return c.Send("⛔ Bu buyruq faqat adminlar uchun.")
+		}
+		st, err := opts.Store.GetStats(opts.BotID)
+		if err != nil {
+			return c.Send("❌ Statistikani o'qib bo'lmadi.")
+		}
+		return c.Send(fmt.Sprintf("🛡️ <b>Admin panel</b>\n\n%s\n\n📣 Barcha foydalanuvchilarga xabar yuborish:\n<code>/broadcast &lt;matn&gt;</code>",
+			formatStats(name, st)))
+	})
+
+	bot.Handle("/broadcast", func(c tele.Context) error {
+		if !isAdmin(opts, c) {
+			return c.Send("⛔ Bu buyruq faqat adminlar uchun.")
+		}
+		msg := strings.TrimSpace(c.Data())
+		if msg == "" {
+			return c.Send("ℹ️ Xabar matnini kiriting: <code>/broadcast &lt;matn&gt;</code>")
+		}
+		ids, err := opts.Store.ListUserTelegramIDs(opts.BotID)
+		if err != nil {
+			return c.Send("❌ Foydalanuvchilar ro'yxatini o'qib bo'lmadi.")
+		}
+		rec := &models.Broadcast{
+			BotID:   opts.BotID,
+			Message: msg,
+			Status:  models.BroadcastRunning,
+			Total:   len(ids),
+		}
+		if err := opts.Store.CreateBroadcast(rec); err != nil {
+			return c.Send("❌ Broadcast yaratilmadi.")
+		}
+		go runBroadcast(bot, opts.Store, rec, ids)
+		return c.Send(fmt.Sprintf("📣 Broadcast boshlandi: <b>%d</b> foydalanuvchiga yuborilmoqda…", len(ids)))
+	})
+}
+
+// notifyAdmins delivers a message to every configured admin of the bot.
+func notifyAdmins(bot *tele.Bot, opts Options, what any) {
+	for _, id := range opts.AdminIDs {
+		if _, err := bot.Send(tele.ChatID(id), what); err != nil {
+			log.Printf("[bot %d] notify admin %d: %v", opts.BotID, id, err)
+		}
+	}
 }
 
 func usageText(spec Spec) string {

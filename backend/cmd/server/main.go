@@ -14,7 +14,6 @@ import (
 	"botmaker-backend/internal/engine"
 	"botmaker-backend/internal/handlers"
 	"botmaker-backend/internal/storage"
-	"botmaker-backend/internal/templates"
 )
 
 func main() {
@@ -27,8 +26,7 @@ func main() {
 	defer store.Close()
 
 	eng := engine.New(store, cfg)
-	eng.RegisterTemplate(&templates.AniTez{})
-	eng.RegisterTemplate(&templates.AniXUltra{})
+	eng.RegisterBuiltinTemplates()
 
 	if err := eng.Start(); err != nil {
 		log.Fatalf("engine: %v", err)

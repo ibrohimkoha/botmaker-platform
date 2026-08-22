@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -29,7 +30,7 @@ func Open(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1) // SQLite: single writer
 
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`); err != nil {
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("configure database: %w", err)
 	}
@@ -91,8 +92,40 @@ CREATE TABLE IF NOT EXISTS broadcasts (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bot_settings (
+    bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    key    TEXT    NOT NULL,
+    value  TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (bot_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id      INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    telegram_id INTEGER NOT NULL,
+    username    TEXT    NOT NULL DEFAULT '',
+    items       TEXT    NOT NULL DEFAULT '[]',
+    total       INTEGER NOT NULL DEFAULT 0,
+    status      TEXT    NOT NULL DEFAULT 'pending',
+    created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tickets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id      INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    telegram_id INTEGER NOT NULL,
+    username    TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'open',
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    UNIQUE (bot_id, telegram_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_bot ON users(bot_id);
 CREATE INDEX IF NOT EXISTS idx_broadcasts_bot ON broadcasts(bot_id);
+CREATE INDEX IF NOT EXISTS idx_orders_bot ON orders(bot_id);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(bot_id, telegram_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_bot ON tickets(bot_id);
 `
 	_, err := db.Exec(schema)
 	if err != nil {
@@ -474,4 +507,195 @@ func (s *Store) ListBroadcasts(botID int64) ([]models.Broadcast, error) {
 		list = []models.Broadcast{}
 	}
 	return list, rows.Err()
+}
+
+// ---- Bot settings ----
+
+// GetSetting returns the value of a per-bot setting. The returned error
+// wraps ErrNotFound when the setting has never been stored.
+func (s *Store) GetSetting(botID int64, key string) (string, error) {
+	var value string
+	err := s.db.QueryRow(
+		`SELECT value FROM bot_settings WHERE bot_id = ? AND key = ?`, botID, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get setting: %w", err)
+	}
+	return value, nil
+}
+
+// SetSetting upserts a per-bot setting.
+func (s *Store) SetSetting(botID int64, key, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO bot_settings (bot_id, key, value) VALUES (?, ?, ?)
+		 ON CONFLICT (bot_id, key) DO UPDATE SET value = excluded.value`,
+		botID, key, value)
+	if err != nil {
+		return fmt.Errorf("set setting: %w", err)
+	}
+	return nil
+}
+
+// DeleteSetting removes a per-bot setting.
+func (s *Store) DeleteSetting(botID int64, key string) error {
+	_, err := s.db.Exec(
+		`DELETE FROM bot_settings WHERE bot_id = ? AND key = ?`, botID, key)
+	if err != nil {
+		return fmt.Errorf("delete setting: %w", err)
+	}
+	return nil
+}
+
+// ---- Orders ----
+
+// CreateOrder inserts an order and sets its ID.
+func (s *Store) CreateOrder(o *models.Order) error {
+	items, err := json.Marshal(o.Items)
+	if err != nil {
+		return fmt.Errorf("encode order items: %w", err)
+	}
+	res, err := s.db.Exec(
+		`INSERT INTO orders (bot_id, telegram_id, username, items, total, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		o.BotID, o.TelegramID, o.Username, string(items), o.Total, o.Status, time.Now().Unix())
+	if err != nil {
+		return fmt.Errorf("create order: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("create order: %w", err)
+	}
+	o.ID = id
+	return nil
+}
+
+// UpdateOrderStatus transitions an order to a new status.
+func (s *Store) UpdateOrderStatus(id int64, status string) error {
+	_, err := s.db.Exec(
+		`UPDATE orders SET status = ? WHERE id = ?`, status, id)
+	if err != nil {
+		return fmt.Errorf("update order status: %w", err)
+	}
+	return nil
+}
+
+// ListOrdersByUser returns the orders placed by a single user, newest first.
+func (s *Store) ListOrdersByUser(botID, telegramID int64) ([]models.Order, error) {
+	rows, err := s.db.Query(
+		`SELECT id, bot_id, telegram_id, username, items, total, status, created_at
+		 FROM orders WHERE bot_id = ? AND telegram_id = ? ORDER BY id DESC`, botID, telegramID)
+	if err != nil {
+		return nil, fmt.Errorf("list orders: %w", err)
+	}
+	defer rows.Close()
+	return scanOrders(rows)
+}
+
+func scanOrders(rows *sql.Rows) ([]models.Order, error) {
+	var list []models.Order
+	for rows.Next() {
+		var (
+			o         models.Order
+			items     string
+			createdAt int64
+		)
+		if err := rows.Scan(&o.ID, &o.BotID, &o.TelegramID, &o.Username,
+			&items, &o.Total, &o.Status, &createdAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(items), &o.Items); err != nil {
+			return nil, fmt.Errorf("decode order items: %w", err)
+		}
+		o.CreatedAt = time.Unix(createdAt, 0)
+		list = append(list, o)
+	}
+	if list == nil {
+		list = []models.Order{}
+	}
+	return list, rows.Err()
+}
+
+// ---- Tickets ----
+
+// UpsertTicket creates or refreshes the support ticket of a user.
+func (s *Store) UpsertTicket(t *models.Ticket) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(
+		`INSERT INTO tickets (bot_id, telegram_id, username, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (bot_id, telegram_id) DO UPDATE SET
+		     username = excluded.username,
+		     status = 'open',
+		     updated_at = excluded.updated_at`,
+		t.BotID, t.TelegramID, t.Username, t.Status, now, now)
+	if err != nil {
+		return fmt.Errorf("upsert ticket: %w", err)
+	}
+	return nil
+}
+
+// GetTicket returns the ticket of a single user.
+func (s *Store) GetTicket(botID, telegramID int64) (*models.Ticket, error) {
+	var (
+		t         models.Ticket
+		createdAt int64
+		updatedAt int64
+	)
+	err := s.db.QueryRow(
+		`SELECT id, bot_id, telegram_id, username, status, created_at, updated_at
+		 FROM tickets WHERE bot_id = ? AND telegram_id = ?`, botID, telegramID).
+		Scan(&t.ID, &t.BotID, &t.TelegramID, &t.Username, &t.Status, &createdAt, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get ticket: %w", err)
+	}
+	t.CreatedAt = time.Unix(createdAt, 0)
+	t.UpdatedAt = time.Unix(updatedAt, 0)
+	return &t, nil
+}
+
+// ListTickets returns the tickets of a bot, newest first.
+func (s *Store) ListTickets(botID int64) ([]models.Ticket, error) {
+	rows, err := s.db.Query(
+		`SELECT id, bot_id, telegram_id, username, status, created_at, updated_at
+		 FROM tickets WHERE bot_id = ? ORDER BY id DESC`, botID)
+	if err != nil {
+		return nil, fmt.Errorf("list tickets: %w", err)
+	}
+	defer rows.Close()
+
+	var list []models.Ticket
+	for rows.Next() {
+		var (
+			t         models.Ticket
+			createdAt int64
+			updatedAt int64
+		)
+		if err := rows.Scan(&t.ID, &t.BotID, &t.TelegramID, &t.Username,
+			&t.Status, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		t.CreatedAt = time.Unix(createdAt, 0)
+		t.UpdatedAt = time.Unix(updatedAt, 0)
+		list = append(list, t)
+	}
+	if list == nil {
+		list = []models.Ticket{}
+	}
+	return list, rows.Err()
+}
+
+// SetTicketStatus transitions a user's ticket to a new status.
+func (s *Store) SetTicketStatus(botID, telegramID int64, status string) error {
+	_, err := s.db.Exec(
+		`UPDATE tickets SET status = ?, updated_at = ? WHERE bot_id = ? AND telegram_id = ?`,
+		status, time.Now().Unix(), botID, telegramID)
+	if err != nil {
+		return fmt.Errorf("set ticket status: %w", err)
+	}
+	return nil
 }

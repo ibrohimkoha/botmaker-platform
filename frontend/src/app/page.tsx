@@ -2,16 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
   Bot as BotIcon,
+  Brain,
   Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Coins,
   Gauge,
   Globe,
   KeyRound,
@@ -24,20 +27,42 @@ import {
   Rocket,
   Send,
   Server,
+  Settings,
   Shield,
   Sparkles,
   Trash2,
   User,
   Webhook,
   X,
-  Zap,
 } from 'lucide-react';
 
 /* ============================================================
    TURLAR VA DOIMIY MA'LUMOTLAR
 ============================================================ */
 
-type TemplateId = 'AniTez' | 'AnixUltra';
+type TemplateId =
+  | 'ai-chatbot'
+  | 'ecommerce'
+  | 'feedback'
+  | 'channel'
+  | 'visual-menu'
+  | 'cinema';
+
+type SettingKey = 'adminId' | 'apiKey' | 'channelId' | 'currency';
+
+interface Template {
+  id: TemplateId;
+  emoji: string;
+  category: string;
+  name: string;
+  short: string;
+  tagline: string;
+  description: string;
+  gradient: string;
+  chip: string;
+  features: string[];
+  settings: SettingKey[];
+}
 
 interface BotItem {
   id: string;
@@ -46,10 +71,15 @@ interface BotItem {
   template: TemplateId;
   token?: string;
   adminId?: string;
+  apiKey?: string;
+  channelId?: string;
+  currency?: string;
   webhookUrl?: string;
   running: boolean;
   webhookActive: boolean;
   latency?: number;
+  requests?: number;
+  aiResponses?: number;
   lastActivity?: string;
 }
 
@@ -57,6 +87,8 @@ interface Stats {
   totalBots: number;
   activeWebhooks: number;
   processedRequests: number;
+  aiResponses: number;
+  serverLoad: number | null;
 }
 
 interface ToastMsg {
@@ -68,107 +100,229 @@ interface ToastMsg {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8085';
 const WEBHOOK_HOST = 'nokori-uz.duckdns.org';
 
-const TEMPLATES: {
-  id: TemplateId;
-  name: string;
-  tagline: string;
-  gradient: string;
-  chip: string;
-  glyph: 'zap' | 'rocket';
-  features: string[];
-}[] = [
+/* ---- 6 shablon toifasi ---- */
+
+const TEMPLATES: Template[] = [
   {
-    id: 'AniTez',
-    name: 'AniTez',
-    tagline: 'Tezkor javob beruvchi media va obuna boshqaruv boti',
+    id: 'ai-chatbot',
+    emoji: '🤖',
+    category: 'AI',
+    name: 'AI Aqlli Chatbot',
+    short: 'AI Chatbot',
+    tagline: 'DeepSeek AI yordamchisi',
+    description:
+      'DeepSeek AI asosidagi aqlli suhbatdosh — mijozlaringizga 24/7 savollarga javob beradi, savdo va maslahat beradi.',
+    gradient: 'from-cyan-400 via-blue-500 to-violet-500',
+    chip: 'border-cyan-400/20 bg-cyan-500/10 text-cyan-300',
+    features: [
+      'DeepSeek AI integratsiyasi (API kalit bilan)',
+      '24/7 avtomatik javoblar',
+      'Suhbat tarixi va kontekst',
+      'Bir nechta tilni tushunadi (uz/ru/en)',
+    ],
+    settings: ['adminId', 'apiKey'],
+  },
+  {
+    id: 'ecommerce',
+    emoji: '🛒',
+    category: 'Biznes',
+    name: "E-Commerce & Online Do'kon",
+    short: 'E-Commerce',
+    tagline: 'Katalog, Savatcha, Click/Payme to\u2018lov',
+    description:
+      "Mahsulot katalogi, savatcha va Click/Payme orqali to'lov qabul qiluvchi to'liq online do'kon boti.",
     gradient: 'from-amber-400 via-orange-500 to-rose-500',
     chip: 'border-amber-400/20 bg-amber-500/10 text-amber-300',
-    glyph: 'zap',
     features: [
-      '~2ms webhook javob vaqti',
-      'Avtomatik media qayta ishlash',
-      'Obuna (subscription) tizimi',
-      'Inline rejim va tezkor qidiruv',
+      'Mahsulot katalogi va qidiruv',
+      'Savatcha va buyurtma tizimi',
+      'Click / Payme to\u2018lov integratsiyasi',
+      'Buyurtmalar kanalga tushadi',
     ],
+    settings: ['adminId', 'channelId', 'currency'],
   },
   {
-    id: 'AnixUltra',
-    name: 'AnixUltra',
-    tagline: 'Kengaytirilgan qidiruv, statistika va ko‘p tarmoqli bot',
-    gradient: 'from-violet-500 via-fuchsia-500 to-cyan-400',
-    chip: 'border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-300',
-    glyph: 'rocket',
+    id: 'feedback',
+    emoji: '💬',
+    category: 'Mijozlar',
+    name: "Feedback & Qo'llab-quvvatlash",
+    short: 'Feedback',
+    tagline: 'Mijozlar bilan 2 tomonlama chat',
+    description:
+      "Mijozlar sizga xabar yozadi, siz bot orqali javob berasiz — qo'llab-quvvatlash xizmatini botga topshiring.",
+    gradient: 'from-emerald-400 via-teal-500 to-cyan-500',
+    chip: 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300',
     features: [
-      'Kuchli aniq qidiruv (fuzzy match)',
-      'Real-time statistika paneli',
-      'Ko‘p tilli UI (uz / ru / en)',
-      'Batch broadcast va segmentatsiya',
+      '2 tomonlama mijoz chat',
+      'Xabarlar admin Telegramga yetib boradi',
+      'Tezkor javob berish interfeysi',
+      'Reyting va baholash',
     ],
+    settings: ['adminId'],
+  },
+  {
+    id: 'channel',
+    emoji: '📢',
+    category: 'Marketing',
+    name: 'Kanal & Majburiy Obuna Menejeri',
+    short: 'Kanal Menejeri',
+    tagline: 'Zayafkalarni avto-tasdiqlash',
+    description:
+      "Kanalingizga majburiy obunani tekshiradi va zayafkalarni avtomatik tasdiqlaydi — obunachilar bazasini o'stiring.",
+    gradient: 'from-fuchsia-400 via-pink-500 to-rose-500',
+    chip: 'border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-300',
+    features: [
+      'Majburiy obuna tekshiruvi',
+      'Zayafkalarni avto-tasdiqlash',
+      'A\u2018zo soni statistikasi',
+      'Cheklangan kontent himoyasi',
+    ],
+    settings: ['adminId', 'channelId'],
+  },
+  {
+    id: 'visual-menu',
+    emoji: '🧩',
+    category: 'Konstruktor',
+    name: 'Maxsus Vizual Menyu & Konstruktor',
+    short: 'Vizual Menyu',
+    tagline: 'Tugmalar va avtojavoblar',
+    description:
+      "Hech qanday kod yozmasdan tugmalar, menyular va avtojavoblar bilan o'z botingizni yig'ing.",
+    gradient: 'from-violet-500 via-purple-500 to-fuchsia-500',
+    chip: 'border-violet-400/20 bg-violet-500/10 text-violet-300',
+    features: [
+      'Vizual tugma konstruktori',
+      'Avtojavob (auto-reply) sozlamalari',
+      'Inline menyular',
+      'Mavzuli bo\u2018limlar',
+    ],
+    settings: ['adminId'],
+  },
+  {
+    id: 'cinema',
+    emoji: '🎬',
+    category: 'Media',
+    name: 'Cinema & Media Botlari',
+    short: 'Cinema',
+    tagline: 'AniTez / AniXUltra shablonlari',
+    description:
+      'AniTez va AniXUltra shablonlari asosida media kontent, qidiruv va obuna boshqaruvchi kino botlar.',
+    gradient: 'from-sky-400 via-indigo-500 to-violet-500',
+    chip: 'border-sky-400/20 bg-sky-500/10 text-sky-300',
+    features: [
+      '~2ms webhook javob vaqti',
+      'Kontent katalogi va qidiruv',
+      'Obuna (subscription) tizimi',
+      'Broadcast va statistika',
+    ],
+    settings: ['adminId', 'channelId'],
   },
 ];
+
+const SETTING_META: Record<SettingKey, { label: string; placeholder: string; hint: string; icon: LucideIcon }> = {
+  adminId: {
+    label: 'Admin Telegram ID',
+    placeholder: 'Masalan: 521348907',
+    hint: 'Faqat shu foydalanuvchi botni boshqarishi mumkin.',
+    icon: User,
+  },
+  apiKey: {
+    label: 'AI API kaliti (DeepSeek)',
+    placeholder: 'sk-...',
+    hint: 'DeepSeek API kaliti — AI javoblari shu orqali yaratiladi.',
+    icon: KeyRound,
+  },
+  channelId: {
+    label: 'Kanal / Guruh ID',
+    placeholder: 'Masalan: @my_channel yoki -1001234567890',
+    hint: 'Obuna tekshirish yoki buyurtmalar qabul qilinadigan kanal.',
+    icon: Globe,
+  },
+  currency: {
+    label: "Do'kon valyutasi",
+    placeholder: 'UZS',
+    hint: 'Mahsulot narxlari ko\u2018rsatiladigan valyuta.',
+    icon: Coins,
+  },
+};
+
+const CURRENCIES = ['UZS', 'USD', 'RUB', 'EUR'];
 
 const DEMO_BOTS: BotItem[] = [
   {
     id: 'b1',
     name: 'AniTez Poster',
     username: 'anitez_poster_bot',
-    template: 'AniTez',
+    template: 'cinema',
     running: true,
     webhookActive: true,
     latency: 12,
+    requests: 8421,
+    aiResponses: 0,
     lastActivity: '2 daqiqa oldin',
   },
   {
     id: 'b2',
-    name: 'AnixUltra Finder',
-    username: 'anixultra_finder_bot',
-    template: 'AnixUltra',
+    name: "Online Do'kon Bot",
+    username: 'shop_uz_bot',
+    template: 'ecommerce',
     running: true,
     webhookActive: true,
-    latency: 4,
-    lastActivity: '1 soat oldin',
+    latency: 8,
+    requests: 2145,
+    aiResponses: 0,
+    lastActivity: '12 daqiqa oldin',
   },
   {
     id: 'b3',
-    name: 'Anime Weekend',
-    username: 'anime_weekend_bot',
-    template: 'AniTez',
+    name: 'AI Yordamchi',
+    username: 'deepseek_uz_bot',
+    template: 'ai-chatbot',
     running: false,
     webhookActive: false,
+    latency: 24,
+    requests: 1892,
+    aiResponses: 3187,
     lastActivity: '3 kun oldin',
   },
 ];
 
-const DEMO_STATS: Stats = { totalBots: 3, activeWebhooks: 2, processedRequests: 12458 };
+const DEMO_STATS: Stats = {
+  totalBots: 3,
+  activeWebhooks: 2,
+  processedRequests: 12458,
+  aiResponses: 3187,
+  serverLoad: 47,
+};
 
 /* ============================================================
    BACKEND API INTEGRATSIYASI
-   Avval Next.js proxisi (/api), bo‘lmasa to‘g‘ridan-to‘g‘ri
-   http://localhost:8085/api ga urinadi.
+   Avval Next.js proxisi (/botmaker/api — basePath bilan),
+   keyin /api, so'ngra to'g'ridan-to'g'ri backend URL.
 ============================================================ */
 
 let apiBase: string | null = null;
 
 async function ensureApiBase(): Promise<string> {
   if (apiBase) return apiBase;
-  const candidates = ['/api', `${API_BASE}/api`];
+  const candidates = ['/botmaker/api', '/api', `${API_BASE}/api`];
   for (const base of candidates) {
     for (const probe of ['/health', '/stats', '/bots', '']) {
       try {
         const res = await fetch(`${base}${probe}`, {
           signal: AbortSignal.timeout(2500),
         });
-        // Server javob bergan bo‘lsa (200 yoki 404) — u yetib olinadi
+        // Server javob bergan bo'lsa (200 yoki 404) — u yetib olinadi
         if (res.ok || res.status === 404) {
           apiBase = base;
           return base;
         }
       } catch {
-        /* keyingi manzilni sinab ko‘ramiz */
+        /* keyingi manzilni sinab ko'ramiz */
       }
     }
   }
-  throw new Error('Backend serverga ulanib bo‘lmadi');
+  throw new Error('Backend serverga ulanib bo\u2018lmadi');
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -189,12 +343,27 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function mapTemplate(raw: string): TemplateId {
+  const s = raw.toLowerCase();
+  if (s.includes('anitez') || s.includes('anix') || s.includes('cinema') || s.includes('media')) return 'cinema';
+  if (s.includes('ai') || s.includes('deepseek') || s.includes('chatbot')) return 'ai-chatbot';
+  if (s.includes('shop') || s.includes('store') || s.includes('ecom') || s.includes('commerce')) return 'ecommerce';
+  if (s.includes('support') || s.includes('feedback')) return 'feedback';
+  if (s.includes('channel') || s.includes('obuna') || s.includes('subscribe')) return 'channel';
+  if (s.includes('menu') || s.includes('visual')) return 'visual-menu';
+  return 'cinema';
+}
+
 function normalizeStats(raw: unknown): Stats {
   const r = (raw ?? {}) as Record<string, unknown>;
+  const loadRaw = r.server_load ?? r.serverLoad ?? r.cpu ?? r.load;
+  const loadN = Number(loadRaw);
   return {
     totalBots: num(r.total_bots ?? r.totalBots ?? r.bots),
     activeWebhooks: num(r.active_webhooks ?? r.activeWebhooks ?? r.webhooks),
     processedRequests: num(r.processed_requests ?? r.processedRequests ?? r.requests),
+    aiResponses: num(r.ai_responses ?? r.aiResponses ?? r.ai_answers),
+    serverLoad: Number.isFinite(loadN) ? Math.min(100, Math.max(0, loadN)) : null,
   };
 }
 
@@ -203,22 +372,24 @@ function normalizeBots(raw: unknown): BotItem[] {
   return list.map((b, i) => {
     const row = (b ?? {}) as Record<string, unknown>;
     const webhook = row.webhook as Record<string, unknown> | undefined;
-    const templateRaw = String(row.template ?? 'AniTez').toLowerCase();
-    const adminRaw = row.admin_id ?? row.adminId;
-    const urlRaw = row.webhook_url ?? row.webhookUrl;
     const lastRaw = row.last_activity ?? row.updated_at;
     const latencyRaw = row.latency ?? webhook?.latency_ms;
     return {
       id: String(row.id ?? row.bot_id ?? row.botId ?? `bot-${i}`),
       name: String(row.name ?? row.bot_name ?? 'Nomsiz bot'),
       username: row.username ? String(row.username) : undefined,
-      template: templateRaw.includes('anix') ? 'AnixUltra' : 'AniTez',
+      template: mapTemplate(String(row.template ?? 'cinema')),
       token: row.token ? String(row.token) : undefined,
-      adminId: adminRaw ? String(adminRaw) : undefined,
-      webhookUrl: urlRaw ? String(urlRaw) : undefined,
+      adminId: row.admin_id ?? row.adminId ? String(row.admin_id ?? row.adminId) : undefined,
+      apiKey: row.api_key ?? row.apiKey ? String(row.api_key ?? row.apiKey) : undefined,
+      channelId: row.channel_id ?? row.channelId ? String(row.channel_id ?? row.channelId) : undefined,
+      currency: row.currency ? String(row.currency) : undefined,
+      webhookUrl: row.webhook_url ?? row.webhookUrl ? String(row.webhook_url ?? row.webhookUrl) : undefined,
       running: Boolean(row.running ?? row.is_running ?? row.active),
       webhookActive: Boolean(row.webhook_active ?? row.webhookActive ?? webhook?.active ?? true),
       latency: latencyRaw != null ? num(latencyRaw) : undefined,
+      requests: row.requests ?? row.webhook_requests ? num(row.requests ?? row.webhook_requests) : undefined,
+      aiResponses: row.ai_responses ?? row.aiResponses ? num(row.ai_responses ?? row.aiResponses) : undefined,
       lastActivity: lastRaw ? String(lastRaw) : undefined,
     };
   });
@@ -230,7 +401,7 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'bot';
 }
 
-function tplOf(id: TemplateId) {
+function tplOf(id: TemplateId): Template {
   return TEMPLATES.find((t) => t.id === id) ?? TEMPLATES[0];
 }
 
@@ -238,14 +409,27 @@ function fmtNum(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+const compactFmt = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+
+function fmtCompact(n: number): string {
+  return compactFmt.format(n);
+}
+
 const INITIAL_FORM = {
-  template: 'AniTez' as TemplateId,
+  template: 'ai-chatbot' as TemplateId,
   name: '',
   token: '',
   adminId: '',
+  apiKey: '',
+  channelId: '',
+  currency: 'UZS',
   webhookUrl: '',
   useWebhook: true,
 };
+
+type FormState = typeof INITIAL_FORM;
+
+const WIZARD_STEPS = ['Shablon tanlang', 'Bot tokeni va nomi', 'Bot sozlamalari', 'Webhookni ulash va ishga tushirish'];
 
 /* ============================================================
    KICHIK UI KOMPONENTLAR
@@ -263,7 +447,7 @@ function Field({
   label: string;
   icon?: LucideIcon;
   hint?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label className="block">
@@ -289,7 +473,7 @@ function Modal({
   onClose: () => void;
   title: string;
   subtitle?: string;
-  children: React.ReactNode;
+  children: ReactNode;
   wide?: boolean;
 }) {
   if (!open) return null;
@@ -337,12 +521,12 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-function TemplateGlyph({ tpl, className }: { tpl: TemplateId; className?: string }) {
-  const t = tplOf(tpl);
-  return t.glyph === 'zap' ? (
-    <Zap className={className} />
-  ) : (
-    <Rocket className={className} />
+function LiveDot({ on = true }: { on?: boolean }) {
+  return (
+    <span className="relative flex h-1.5 w-1.5">
+      {on && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />}
+      <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${on ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+    </span>
   );
 }
 
@@ -352,27 +536,35 @@ function TemplateGlyph({ tpl, className }: { tpl: TemplateId; className?: string
 
 export default function DashboardPage() {
   const [bots, setBots] = useState<BotItem[]>([]);
-  const [stats, setStats] = useState<Stats>({ totalBots: 0, activeWebhooks: 0, processedRequests: 0 });
+  const [stats, setStats] = useState<Stats>({ totalBots: 0, activeWebhooks: 0, processedRequests: 0, aiResponses: 0, serverLoad: null });
   const [loading, setLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
 
-  // Yangi bot wizard
+  // Yangi bot wizard (4 bosqich)
   const [createOpen, setCreateOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
-  const [form, setForm] = useState(INITIAL_FORM);
+  const [form, setForm] = useState<FormState>(INITIAL_FORM);
 
   // Broadcast
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [broadcastTarget, setBroadcastTarget] = useState<string>('all');
   const [broadcastText, setBroadcastText] = useState('');
 
-  // O‘chirish tasdiqlash
-  const [deleteTarget, setDeleteTarget] = useState<BotItem | null>(null);
+  // Bot sozlamalari
+  const [settingsTarget, setSettingsTarget] = useState<BotItem | null>(null);
+  const [settingsForm, setSettingsForm] = useState({
+    adminId: '',
+    apiKey: '',
+    channelId: '',
+    currency: 'UZS',
+    webhookUrl: '',
+  });
 
-  const stepTitles = ['Shablon tanlang', 'Bot konfiguratsiyasi', 'Webhook ulash'];
+  // O'chirish tasdiqlash
+  const [deleteTarget, setDeleteTarget] = useState<BotItem | null>(null);
 
   /* ---- Toast ---- */
 
@@ -386,8 +578,8 @@ export default function DashboardPage() {
 
   /* ---- Ma'lumot yuklash ---- */
 
-  const loadData = useCallback(async (): Promise<boolean> => {
-    setLoading(true);
+  const loadData = useCallback(async (silent = false): Promise<boolean> => {
+    if (!silent) setLoading(true);
     try {
       const [statsRes, botsRes] = await Promise.all([
         apiFetch<unknown>('/stats'),
@@ -404,7 +596,7 @@ export default function DashboardPage() {
       setDemoMode(true);
       return false;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -412,40 +604,74 @@ export default function DashboardPage() {
     void loadData();
   }, [loadData]);
 
+  /* ---- Jonli statistika: demo rejimda simulyatsiya, realda 15s polling ---- */
+
+  useEffect(() => {
+    const demo = window.setInterval(() => {
+      if (demoMode) {
+        setStats((s) => ({
+          ...s,
+          processedRequests: s.processedRequests + Math.floor(Math.random() * 8) + 2,
+          aiResponses: s.aiResponses + Math.floor(Math.random() * 3),
+        }));
+      }
+    }, 4000);
+
+    const live = window.setInterval(() => {
+      if (!demoMode) void loadData(true);
+    }, 15000);
+
+    return () => {
+      window.clearInterval(demo);
+      window.clearInterval(live);
+    };
+  }, [demoMode, loadData]);
+
   const webhookLatency = useMemo(() => {
     const actives = bots.filter((b) => b.webhookActive && b.running);
     if (actives.length === 0) return 2;
     return Math.min(...actives.map((b) => b.latency ?? 2));
   }, [bots]);
 
-  const statCards: { label: string; value: string; icon: LucideIcon; gradient: string; sub: string }[] = [
+  const statCards: { label: string; value: string; icon: LucideIcon; gradient: string; sub: string; bar: number | null }[] = [
     {
-      label: 'Jami botlar',
+      label: 'Faol botlar',
       value: fmtNum(stats.totalBots),
       icon: BotIcon,
       gradient: 'from-cyan-400 to-blue-500',
-      sub: 'platformada ro‘yxatdan o‘tgan',
+      sub: 'platformada ishlamoqda',
+      bar: null,
     },
     {
-      label: 'Faol Webhooklar',
-      value: fmtNum(stats.activeWebhooks),
+      label: 'Webhook so\u2018rovlari',
+      value: fmtNum(stats.processedRequests),
       icon: Webhook,
       gradient: 'from-violet-400 to-fuchsia-500',
-      sub: 'so‘rov qabul qilmoqda',
+      sub: 'jami qayta ishlangan',
+      bar: null,
     },
     {
-      label: 'Qayta ishlangan so‘rovlar',
-      value: fmtNum(stats.processedRequests),
-      icon: Activity,
+      label: 'AI javoblari',
+      value: fmtNum(stats.aiResponses),
+      icon: Brain,
       gradient: 'from-emerald-400 to-teal-500',
-      sub: '24 soat ichida',
+      sub: 'AI tomonidan yaratilgan',
+      bar: null,
+    },
+    {
+      label: 'Server quvvati',
+      value: stats.serverLoad != null ? `${Math.round(stats.serverLoad)}%` : '—',
+      icon: Server,
+      gradient: 'from-amber-400 to-orange-500',
+      sub: 'CPU yuklanishi',
+      bar: stats.serverLoad,
     },
   ];
 
   /* ---- Yangi bot wizard ---- */
 
   const openCreate = (template?: TemplateId) => {
-    setForm({ ...INITIAL_FORM, template: template ?? 'AniTez' });
+    setForm({ ...INITIAL_FORM, template: template ?? INITIAL_FORM.template });
     setWizardStep(0);
     setCreateOpen(true);
   };
@@ -461,11 +687,32 @@ export default function DashboardPage() {
     [form.name],
   );
 
-  const handleCreate = async () => {
-    if (!form.name.trim() || !form.token.trim()) {
-      pushToast('error', 'Bot nomi va token kiritilishi shart');
-      return;
+  const goNext = () => {
+    if (wizardStep === 1) {
+      if (!form.name.trim()) {
+        pushToast('error', 'Bot nomini kiriting');
+        return;
+      }
+      if (!form.token.trim()) {
+        pushToast('error', 'Bot tokenni kiriting — @BotFather dan oling');
+        return;
+      }
     }
+    if (wizardStep === 2) {
+      if (!form.adminId.trim()) {
+        pushToast('error', 'Admin Telegram ID kiriting');
+        return;
+      }
+      const tpl = tplOf(form.template);
+      if (tpl.settings.includes('apiKey') && !form.apiKey.trim()) {
+        pushToast('error', 'AI API kaliti (DeepSeek) kiriting');
+        return;
+      }
+    }
+    setWizardStep((s) => Math.min(WIZARD_STEPS.length - 1, s + 1));
+  };
+
+  const handleCreate = async () => {
     setBusy(true);
     try {
       await apiFetch('/bots', {
@@ -473,16 +720,20 @@ export default function DashboardPage() {
         body: JSON.stringify({
           name: form.name.trim(),
           template: form.template,
+          template_name: tplOf(form.template).name,
           token: form.token.trim(),
           admin_id: form.adminId.trim() || undefined,
+          api_key: form.apiKey.trim() || undefined,
+          channel_id: form.channelId.trim() || undefined,
+          currency: form.currency || undefined,
           webhook_url: form.useWebhook ? form.webhookUrl.trim() || autoWebhookUrl : undefined,
         }),
       });
-      pushToast('success', `«${form.name}» boti muvaffaqiyatli yaratildi`);
+      pushToast('success', `«${form.name.trim()}» boti yaratildi va ishga tushirildi`);
       closeCreate();
-      await loadData();
+      await loadData(true);
     } catch (e) {
-      pushToast('error', `Bot yaratilmadi: ${e instanceof Error ? e.message : 'noma’lum xatolik'}`);
+      pushToast('error', `Bot yaratilmadi: ${e instanceof Error ? e.message : 'noma\u2019lum xatolik'}`);
     } finally {
       setBusy(false);
     }
@@ -497,12 +748,60 @@ export default function DashboardPage() {
     setBots((prev) => prev.map((b) => (b.id === bot.id ? { ...b, running: next } : b)));
     try {
       await apiFetch(`/bots/${bot.id}/${next ? 'start' : 'stop'}`, { method: 'POST' });
-      pushToast('success', `«${bot.name}» ${next ? 'ishga tushirildi' : 'to‘xtatildi'}`);
+      pushToast('success', `«${bot.name}» ${next ? 'ishga tushirildi' : 'to\u2018xtatildi'}`);
     } catch (e) {
       setBots((prev) => prev.map((b) => (b.id === bot.id ? { ...b, running: !next } : b)));
-      pushToast('error', `Amal bajarilmadi: ${e instanceof Error ? e.message : 'noma’lum xatolik'}`);
+      pushToast('error', `Amal bajarilmadi: ${e instanceof Error ? e.message : 'noma\u2019lum xatolik'}`);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const openSettings = (bot: BotItem) => {
+    setSettingsTarget(bot);
+    setSettingsForm({
+      adminId: bot.adminId ?? '',
+      apiKey: bot.apiKey ?? '',
+      channelId: bot.channelId ?? '',
+      currency: bot.currency ?? 'UZS',
+      webhookUrl: bot.webhookUrl ?? '',
+    });
+  };
+
+  const saveSettings = async () => {
+    if (!settingsTarget) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/bots/${settingsTarget.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          admin_id: settingsForm.adminId.trim() || undefined,
+          api_key: settingsForm.apiKey.trim() || undefined,
+          channel_id: settingsForm.channelId.trim() || undefined,
+          currency: settingsForm.currency.trim() || undefined,
+          webhook_url: settingsForm.webhookUrl.trim() || undefined,
+        }),
+      });
+      setBots((prev) =>
+        prev.map((b) =>
+          b.id === settingsTarget.id
+            ? {
+                ...b,
+                adminId: settingsForm.adminId.trim() || undefined,
+                apiKey: settingsForm.apiKey.trim() || undefined,
+                channelId: settingsForm.channelId.trim() || undefined,
+                currency: settingsForm.currency.trim() || undefined,
+                webhookUrl: settingsForm.webhookUrl.trim() || undefined,
+              }
+            : b,
+        ),
+      );
+      pushToast('success', `«${settingsTarget.name}» sozlamalari saqlandi`);
+      setSettingsTarget(null);
+    } catch (e) {
+      pushToast('error', `Sozlamalar saqlanmadi: ${e instanceof Error ? e.message : 'noma\u2019lum xatolik'}`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -513,10 +812,10 @@ export default function DashboardPage() {
       await apiFetch(`/bots/${deleteTarget.id}`, { method: 'DELETE' });
       setBots((prev) => prev.filter((b) => b.id !== deleteTarget.id));
       setStats((s) => ({ ...s, totalBots: Math.max(0, s.totalBots - 1) }));
-      pushToast('success', `«${deleteTarget.name}» o‘chirildi`);
+      pushToast('success', `«${deleteTarget.name}» o\u2018chirildi`);
       setDeleteTarget(null);
     } catch (e) {
-      pushToast('error', `O‘chirishda xatolik: ${e instanceof Error ? e.message : 'noma’lum xatolik'}`);
+      pushToast('error', `O\u2018chirishda xatolik: ${e instanceof Error ? e.message : 'noma\u2019lum xatolik'}`);
     } finally {
       setBusy(false);
     }
@@ -541,11 +840,13 @@ export default function DashboardPage() {
       setBroadcastOpen(false);
       setBroadcastText('');
     } catch (e) {
-      pushToast('error', `Broadcast yuborilmadi: ${e instanceof Error ? e.message : 'noma’lum xatolik'}`);
+      pushToast('error', `Broadcast yuborilmadi: ${e instanceof Error ? e.message : 'noma\u2019lum xatolik'}`);
     } finally {
       setBusy(false);
     }
   };
+
+  const activeTpl = tplOf(form.template);
 
   /* ============================================================
      JSX
@@ -565,32 +866,26 @@ export default function DashboardPage() {
         {/* ===== HEADER ===== */}
         <header className="sticky top-0 z-40 -mx-4 border-b border-white/5 bg-[#05050f]/70 px-4 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/30">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/30">
                 <BotIcon className="h-5 w-5 text-white" />
                 <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#05050f]" />
               </div>
-              <div>
-                <h1 className="text-lg font-bold leading-tight tracking-tight text-white">
-                  BotMaker <span className="text-gradient">AI</span>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-bold leading-tight tracking-tight text-white sm:text-base lg:text-lg">
+                  🤖 <span className="text-gradient">BotMaker AI</span> — Professional Telegram Botlar Konstruktori
                 </h1>
-                <p className="text-[11px] leading-tight text-slate-500">Telegram bot platformasi</p>
+                <p className="mt-0.5 hidden max-w-2xl truncate text-[11px] leading-tight text-slate-500 xl:block">
+                  Bozor narxidan 10x arzonroq, yuqori sifatli va Webhook asosida chaqmoqdek tez ishlovchi Telegram
+                  botlar yarating.
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {/* VPS Server holati */}
               <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 backdrop-blur md:flex">
-                <span className="relative flex h-2 w-2">
-                  <span
-                    className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${
-                      demoMode ? 'bg-amber-400' : 'bg-emerald-400'
-                    }`}
-                  />
-                  <span
-                    className={`relative inline-flex h-2 w-2 rounded-full ${demoMode ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                  />
-                </span>
+                <LiveDot on={!demoMode} />
                 <Server className="h-3.5 w-3.5 text-slate-400" />
                 <span className="font-mono text-xs text-slate-300">nokori-uz.duckdns.org</span>
                 <span
@@ -638,8 +933,8 @@ export default function DashboardPage() {
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-sm text-amber-200/90">
               <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
               <span>
-                Backend API topilmadi ({API_BASE}). Hozircha <b className="text-amber-100">demo ma’lumotlar</b>{' '}
-                ko‘rsatilmoqda — server ishga tushganda «Yangilash» tugmasini bosing.
+                Backend API topilmadi ({API_BASE}). Hozircha <b className="text-amber-100">demo ma\u2019lumotlar</b>{' '}
+                ko\u2018rsatilmoqda — server ishga tushganda «Yangilash» tugmasini bosing.
               </span>
               <button
                 onClick={() => void loadData()}
@@ -650,8 +945,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ===== STATISTIKA KARTALARI ===== */}
-          <section className="grid gap-4 sm:grid-cols-3">
+          {/* ===== TEZKOR STATISTIKA KARTALARI ===== */}
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {statCards.map((c) => (
               <div
                 key={c.label}
@@ -676,20 +971,32 @@ export default function DashboardPage() {
                   )}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">{c.sub}</p>
+                {c.bar != null && (
+                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-700"
+                      style={{ width: `${c.bar}%` }}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </section>
 
-          {/* ===== MENING BOTLARIM ===== */}
+          {/* ===== BOTLAR BOSHQARUV PANELI ===== */}
           <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-400/20 bg-violet-500/10 text-violet-300">
                   <BotIcon className="h-4 w-4" />
                 </div>
-                <h2 className="text-xl font-bold text-white">Mening Botlarim</h2>
+                <h2 className="text-xl font-bold text-white">Botlar Boshqaruv Paneli</h2>
                 <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-slate-400">
                   {bots.length} ta
+                </span>
+                <span className="flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+                  <LiveDot />
+                  Jonli statistika
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -734,9 +1041,10 @@ export default function DashboardPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-400">
                   <BotIcon className="h-7 w-7" />
                 </div>
-                <p className="font-semibold text-white">Hali botlar yo‘q</p>
+                <p className="font-semibold text-white">Hali botlar yo\u2018q</p>
                 <p className="max-w-sm text-sm text-slate-500">
-                  Birinchi Telegram botingizni yarating — «Yangi Bot» tugmasini bosing va wizardni yakunlang.
+                  Birinchi Telegram botingizni yarating — «Yangi Bot» tugmasini bosing va 4 bosqichli wizardni
+                  yakunlang.
                 </p>
                 <button
                   onClick={() => openCreate()}
@@ -751,6 +1059,8 @@ export default function DashboardPage() {
                 {bots.map((bot) => {
                   const tpl = tplOf(bot.template);
                   const isToggling = busyId === bot.id;
+                  const reqs = bot.requests ?? 0;
+                  const ai = bot.aiResponses ?? 0;
                   return (
                     <div
                       key={bot.id}
@@ -759,9 +1069,9 @@ export default function DashboardPage() {
                       {/* Bot ma'lumotlari */}
                       <div className="flex min-w-0 flex-1 items-center gap-4">
                         <div
-                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${tpl.gradient} shadow-lg`}
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${tpl.gradient} text-xl shadow-lg`}
                         >
-                          <TemplateGlyph tpl={bot.template} className="h-6 w-6 text-white" />
+                          {tpl.emoji}
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
@@ -779,12 +1089,24 @@ export default function DashboardPage() {
                           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                             <span className="font-mono">@{bot.username ?? '—'}</span>
                             <span className={`rounded-full border px-2 py-0.5 font-medium ${tpl.chip}`}>
-                              {bot.template}
+                              {tpl.emoji} {tpl.short}
                             </span>
                             <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               {bot.lastActivity ?? 'hozir'}
                             </span>
+                            {reqs > 0 && (
+                              <span className="flex items-center gap-1 font-mono text-emerald-300/80">
+                                <Activity className="h-3 w-3" />
+                                {fmtCompact(reqs)} so\u2018rov
+                              </span>
+                            )}
+                            {ai > 0 && (
+                              <span className="flex items-center gap-1 font-mono text-cyan-300/80">
+                                <Brain className="h-3 w-3" />
+                                {fmtCompact(ai)} AI
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -798,17 +1120,13 @@ export default function DashboardPage() {
                               : 'border-slate-500/20 bg-slate-500/10 text-slate-400'
                           }`}
                         >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              bot.webhookActive ? 'animate-pulse-soft bg-emerald-400' : 'bg-slate-500'
-                            }`}
-                          />
+                          <LiveDot on={bot.webhookActive} />
                           {bot.webhookActive ? `Active ${bot.latency ?? 2}ms` : 'Inactive'}
                         </span>
 
                         <div
                           className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-                          title={bot.running ? 'To‘xtatish' : 'Ishga tushirish'}
+                          title={bot.running ? 'To\u2018xtatish' : 'Ishga tushirish'}
                         >
                           {isToggling ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -816,6 +1134,14 @@ export default function DashboardPage() {
                             <Toggle checked={bot.running} onChange={() => void toggleBot(bot)} />
                           )}
                         </div>
+
+                        <button
+                          onClick={() => openSettings(bot)}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition hover:border-violet-400/30 hover:bg-violet-400/10 hover:text-violet-300"
+                          title="Bot sozlamalari"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </button>
 
                         <button
                           onClick={() => {
@@ -831,7 +1157,7 @@ export default function DashboardPage() {
                         <button
                           onClick={() => setDeleteTarget(bot)}
                           className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition hover:border-rose-400/30 hover:bg-rose-400/10 hover:text-rose-400"
-                          title="Botni o‘chirish"
+                          title="Botni o\u2018chirish"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -850,32 +1176,37 @@ export default function DashboardPage() {
                 <Sparkles className="h-4 w-4" />
               </div>
               <h2 className="text-xl font-bold text-white">Shablonlar Katalogi</h2>
+              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-slate-400">
+                6 toifa
+              </span>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {TEMPLATES.map((t) => (
                 <div
                   key={t.id}
-                  className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl transition-all hover:border-white/20"
+                  className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl transition-all hover:border-white/20"
                 >
                   <div className={`absolute inset-x-0 top-0 h-px bg-gradient-to-r ${t.gradient} opacity-70`} />
                   <div
                     className={`absolute -right-16 -top-16 h-48 w-48 rounded-full bg-gradient-to-br ${t.gradient} opacity-10 blur-3xl transition-opacity group-hover:opacity-20`}
                   />
-                  <div className="relative flex items-center gap-3">
+                  <div className="relative flex items-start justify-between gap-3">
                     <div
-                      className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${t.gradient} shadow-lg`}
+                      className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${t.gradient} text-2xl shadow-lg`}
                     >
-                      {t.glyph === 'zap' ? (
-                        <Zap className="h-5 w-5 text-white" />
-                      ) : (
-                        <Rocket className="h-5 w-5 text-white" />
-                      )}
+                      {t.emoji}
                     </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white">{t.name}</h3>
-                      <p className="text-xs text-slate-400">{t.tagline}</p>
-                    </div>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${t.chip}`}
+                    >
+                      {t.category}
+                    </span>
+                  </div>
+                  <div className="relative mt-4">
+                    <h3 className="text-lg font-bold text-white">{t.name}</h3>
+                    <p className="mt-0.5 text-sm text-cyan-300/80">{t.tagline}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">{t.description}</p>
                   </div>
                   <ul className="relative mt-4 space-y-2">
                     {t.features.map((f) => (
@@ -889,7 +1220,7 @@ export default function DashboardPage() {
                     onClick={() => openCreate(t.id)}
                     className="relative mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10 active:scale-[0.99]"
                   >
-                    {t.name} bilan bot yaratish
+                    {t.emoji} {t.short} yaratish
                     <ArrowRight className="h-4 w-4 text-cyan-300" />
                   </button>
                 </div>
@@ -900,21 +1231,22 @@ export default function DashboardPage() {
 
         {/* ===== FOOTER ===== */}
         <footer className="border-t border-white/5 py-6 text-center text-xs text-slate-500">
-          BotMaker AI v1.0 · Telegram bot platformasi ·{' '}
+          🤖 BotMaker AI v2.0 · Universal Telegram Botlar Konstruktori ·{' '}
           <span className="font-mono text-slate-400">{WEBHOOK_HOST}</span>
         </footer>
       </div>
 
-      {/* ===== YANGI BOT WIZARD ===== */}
+      {/* ===== YANGI BOT WIZARD (4 BOSQICH) ===== */}
       <Modal
         open={createOpen}
         onClose={closeCreate}
         title="Yangi Bot Yaratish"
-        subtitle={`Qadam ${wizardStep + 1}/3 — ${stepTitles[wizardStep]}`}
+        subtitle={`Qadam ${wizardStep + 1}/4 — ${WIZARD_STEPS[wizardStep]}`}
+        wide
       >
         {/* Progress */}
-        <div className="mb-6 flex items-center gap-2">
-          {[0, 1, 2].map((i) => (
+        <div className="mb-5 flex items-center gap-2">
+          {WIZARD_STEPS.map((_, i) => (
             <div
               key={i}
               className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
@@ -924,35 +1256,31 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Qadam 1 — Shablon tanlash */}
+        {/* Qadam 1 — Bot toifasi va shablonini tanlash */}
         {wizardStep === 0 && (
-          <div className="space-y-3">
+          <div className="grid max-h-[46vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
             {TEMPLATES.map((t) => {
               const selected = form.template === t.id;
               return (
                 <button
                   key={t.id}
                   onClick={() => setForm((f) => ({ ...f, template: t.id }))}
-                  className={`w-full rounded-xl border p-4 text-left transition-all ${
+                  className={`relative w-full rounded-xl border p-4 text-left transition-all ${
                     selected
                       ? 'border-cyan-400/50 bg-cyan-400/5 ring-2 ring-cyan-400/20'
                       : 'border-white/10 bg-white/[0.03] hover:border-white/25'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div
-                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${t.gradient}`}
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${t.gradient} text-xl`}
                       >
-                        {t.glyph === 'zap' ? (
-                          <Zap className="h-5 w-5 text-white" />
-                        ) : (
-                          <Rocket className="h-5 w-5 text-white" />
-                        )}
+                        {t.emoji}
                       </div>
                       <div>
-                        <p className="font-semibold text-white">{t.name}</p>
-                        <p className="text-xs text-slate-400">{t.tagline}</p>
+                        <p className="text-sm font-semibold leading-tight text-white">{t.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">{t.tagline}</p>
                       </div>
                     </div>
                     {selected && <CheckCircle2 className="h-5 w-5 shrink-0 text-cyan-400" />}
@@ -963,7 +1291,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Qadam 2 — Konfiguratsiya */}
+        {/* Qadam 2 — Bot tokeni va nomi */}
         {wizardStep === 1 && (
           <div className="space-y-4">
             <Field label="Bot nomi" icon={BotIcon}>
@@ -986,33 +1314,105 @@ export default function DashboardPage() {
                 className={`${inputCls} font-mono`}
               />
             </Field>
-            <Field label="Admin ID" icon={User} hint="Faqat shu foydalanuvchi botni boshqarishi mumkin.">
-              <input
-                value={form.adminId}
-                onChange={(e) => setForm((f) => ({ ...f, adminId: e.target.value }))}
-                placeholder="Masalan: 521348907"
-                inputMode="numeric"
-                className={inputCls}
-              />
-            </Field>
+            <div className="flex gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-xs leading-relaxed text-slate-400">
+              <Shield className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
+              <span>
+                Token olish uchun Telegram'da{' '}
+                <code className="font-mono text-violet-200">@BotFather</code> ga murojaat qiling →{' '}
+                <code className="font-mono text-violet-200">/newbot</code> → tokenni shu yerga joylang.
+              </span>
+            </div>
           </div>
         )}
 
-        {/* Qadam 3 — Webhook ulash */}
+        {/* Qadam 3 — Bot sozlamalari */}
         {wizardStep === 2 && (
           <div className="space-y-4">
+            <div className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${activeTpl.gradient} text-lg`}>
+                {activeTpl.emoji}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">{activeTpl.name}</p>
+                <p className="text-xs text-slate-400">{activeTpl.tagline}</p>
+              </div>
+            </div>
+            {activeTpl.settings.map((key) => {
+              const meta = SETTING_META[key];
+              const Icon = meta.icon;
+              return (
+                <Field key={key} label={meta.label} icon={Icon} hint={meta.hint}>
+                  {key === 'currency' ? (
+                    <select
+                      value={form.currency}
+                      onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+                      className={`${inputCls} appearance-none`}
+                    >
+                      {CURRENCIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={form[key]}
+                      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                      placeholder={meta.placeholder}
+                      inputMode={key === 'adminId' ? 'numeric' : undefined}
+                      className={`${inputCls} ${key === 'apiKey' ? 'font-mono' : ''}`}
+                    />
+                  )}
+                </Field>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Qadam 4 — Webhookni ulash va ishga tushirish */}
+        {wizardStep === 3 && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Bot xulosasi
+              </p>
+              <ul className="space-y-1.5 text-sm text-slate-300">
+                <li className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-slate-500">Shablon:</span>
+                  <span>
+                    {activeTpl.emoji} {activeTpl.name}
+                  </span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-slate-500">Nomi:</span>
+                  <span className="font-medium text-white">{form.name || '—'}</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-slate-500">Username:</span>
+                  <span className="font-mono text-cyan-300">@{slugify(form.name)}</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-slate-500">Admin ID:</span>
+                  <span className="font-mono">{form.adminId || '—'}</span>
+                </li>
+                {form.apiKey && (
+                  <li className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-slate-500">AI API:</span>
+                    <span className="font-mono text-emerald-300">{form.apiKey.slice(0, 8)}…</span>
+                  </li>
+                )}
+              </ul>
+            </div>
+
             <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <div className="flex items-center gap-3">
                 <Link2 className="h-4 w-4 shrink-0 text-cyan-400" />
                 <div>
                   <p className="text-sm font-medium text-white">Webhookni ulash</p>
-                  <p className="text-xs text-slate-400">Bot so‘rovlari shu manzilga yo‘naltiriladi</p>
+                  <p className="text-xs text-slate-400">Bot so\u2018rovlari shu manzilga yo\u2018naltiriladi</p>
                 </div>
               </div>
-              <Toggle
-                checked={form.useWebhook}
-                onChange={(v) => setForm((f) => ({ ...f, useWebhook: v }))}
-              />
+              <Toggle checked={form.useWebhook} onChange={(v) => setForm((f) => ({ ...f, useWebhook: v }))} />
             </div>
 
             {form.useWebhook && (
@@ -1029,8 +1429,9 @@ export default function DashboardPage() {
             <div className="flex gap-2.5 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3.5 text-xs leading-relaxed text-cyan-100/80">
               <Shield className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
               <span>
-                Token Telegram API orqali <code className="font-mono text-cyan-200">setWebhook</code> bilan ulanadi.
-                Server: <span className="font-mono text-cyan-200">{WEBHOOK_HOST}</span> (VPS).
+                Token Telegram API orqali <code className="font-mono text-cyan-200">setWebhook</code> bilan ulanadi va
+                bot darhol ishga tushadi. Server:{' '}
+                <span className="font-mono text-cyan-200">{WEBHOOK_HOST}</span> (VPS).
               </span>
             </div>
           </div>
@@ -1047,9 +1448,9 @@ export default function DashboardPage() {
             Orqaga
           </button>
 
-          {wizardStep < 2 ? (
+          {wizardStep < WIZARD_STEPS.length - 1 ? (
             <button
-              onClick={() => setWizardStep((s) => Math.min(2, s + 1))}
+              onClick={goNext}
               className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition hover:brightness-110"
             >
               Keyingi
@@ -1061,19 +1462,85 @@ export default function DashboardPage() {
               disabled={busy}
               className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Botni yaratish
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              Webhookni ulash va ishga tushirish
             </button>
           )}
         </div>
       </Modal>
 
-      {/* ===== BROADCAST MODAL ===== */}
+      {/* ===== BOT SOZLAMALARI MODALI ===== */}
+      <Modal
+        open={!!settingsTarget}
+        onClose={() => setSettingsTarget(null)}
+        title="Bot sozlamalari"
+        subtitle={settingsTarget ? `«${settingsTarget.name}» sozlamalarini o\u2018zgartirish` : undefined}
+      >
+        {settingsTarget && (
+          <div className="space-y-4">
+            {tplOf(settingsTarget.template).settings.map((key) => {
+              const meta = SETTING_META[key];
+              const Icon = meta.icon;
+              return (
+                <Field key={key} label={meta.label} icon={Icon} hint={meta.hint}>
+                  {key === 'currency' ? (
+                    <select
+                      value={settingsForm.currency}
+                      onChange={(e) => setSettingsForm((f) => ({ ...f, currency: e.target.value }))}
+                      className={`${inputCls} appearance-none`}
+                    >
+                      {CURRENCIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={settingsForm[key]}
+                      onChange={(e) => setSettingsForm((f) => ({ ...f, [key]: e.target.value }))}
+                      placeholder={meta.placeholder}
+                      inputMode={key === 'adminId' ? 'numeric' : undefined}
+                      className={`${inputCls} ${key === 'apiKey' ? 'font-mono' : ''}`}
+                    />
+                  )}
+                </Field>
+              );
+            })}
+            <Field label="Webhook URL" icon={Link2} hint="Bot so\u2018rovlari qabul qilinadigan manzil.">
+              <input
+                value={settingsForm.webhookUrl}
+                onChange={(e) => setSettingsForm((f) => ({ ...f, webhookUrl: e.target.value }))}
+                placeholder={`https://${WEBHOOK_HOST}/webhook/...`}
+                className={`${inputCls} font-mono`}
+              />
+            </Field>
+          </div>
+        )}
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={() => setSettingsTarget(null)}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+          >
+            Bekor qilish
+          </button>
+          <button
+            onClick={() => void saveSettings()}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            Saqlash
+          </button>
+        </div>
+      </Modal>
+
+      {/* ===== BROADCAST MODALI ===== */}
       <Modal
         open={broadcastOpen}
         onClose={() => setBroadcastOpen(false)}
         title="Broadcast — Xabar yuborish"
-        subtitle="Bot obunachilariga ommaviy xabar jo‘natiladi"
+        subtitle="Bot obunachilariga ommaviy xabar jo\u2018natiladi"
       >
         <div className="space-y-4">
           <Field label="Qaysi bot orqali" icon={Megaphone}>
@@ -1091,7 +1558,7 @@ export default function DashboardPage() {
             </select>
           </Field>
 
-          <Field label="Xabar matni" icon={MessageSquare} hint="Markdown va HTML formatlash qo‘llab-quvvatlanadi.">
+          <Field label="Xabar matni" icon={MessageSquare} hint="Markdown va HTML formatlash qo\u2018llab-quvvatlanadi.">
             <textarea
               value={broadcastText}
               onChange={(e) => setBroadcastText(e.target.value)}
@@ -1127,16 +1594,16 @@ export default function DashboardPage() {
         </div>
       </Modal>
 
-      {/* ===== O‘CHIRISH TASDIQLASH ===== */}
+      {/* ===== O'CHIRISH TASDIQLASH ===== */}
       <Modal
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        title="Botni o‘chirish"
-        subtitle="Bu amalni ortga qaytarib bo‘lmaydi"
+        title="Botni o\u2018chirish"
+        subtitle="Bu amalni ortga qaytarib bo\u2018lmaydi"
       >
         <p className="text-sm leading-relaxed text-slate-300">
-          <b className="text-white">{deleteTarget?.name}</b> boti va uning barcha ma’lumotlari (obunachilar,
-          statistika) o‘chiriladi. Davom etasizmi?
+          <b className="text-white">{deleteTarget?.name}</b> boti va uning barcha ma\u2019lumotlari (obunachilar,
+          statistika) o\u2018chiriladi. Davom etasizmi?
         </p>
         <div className="mt-6 flex justify-end gap-3">
           <button
@@ -1151,7 +1618,7 @@ export default function DashboardPage() {
             className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-red-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-rose-500/25 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            O‘chirish
+            O\u2018chirish
           </button>
         </div>
       </Modal>
