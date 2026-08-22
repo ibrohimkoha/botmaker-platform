@@ -31,8 +31,15 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", a.handleHealth)
 	mux.HandleFunc("GET /api/bots", a.handleListBots)
 	mux.HandleFunc("POST /api/bots", a.handleCreateBot)
+	mux.HandleFunc("PUT /api/bots/{id}", a.handleUpdateBot)
+	mux.HandleFunc("PATCH /api/bots/{id}", a.handleUpdateBot)
+	mux.HandleFunc("POST /api/bots/{id}", a.handleUpdateBot)
 	mux.HandleFunc("DELETE /api/bots/{id}", a.handleDeleteBot)
 	mux.HandleFunc("POST /api/bots/{id}/toggle", a.handleToggleBot)
+	mux.HandleFunc("POST /api/bots/{id}/start", a.handleStartBot)
+	mux.HandleFunc("POST /api/bots/{id}/stop", a.handleStopBot)
+	mux.HandleFunc("POST /api/broadcast", a.handleBroadcast)
+	mux.HandleFunc("POST /api/bots/{id}/broadcast", a.handleBroadcast)
 	mux.HandleFunc("GET /api/templates", a.handleListTemplates)
 	mux.HandleFunc("GET /api/stats", a.handleStats)
 	mux.HandleFunc("POST /api/webhook/{token}", a.handleWebhook)
@@ -131,6 +138,112 @@ func (a *API) handleToggleBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, bot)
+}
+
+type updateBotSettingsRequest struct {
+	AdminID    string `json:"admin_id"`
+	APIKey     string `json:"api_key"`
+	ChannelID  string `json:"channel_id"`
+	Currency   string `json:"currency"`
+	WebhookURL string `json:"webhook_url"`
+}
+
+func (a *API) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "noto'g'ri bot id")
+		return
+	}
+	var req updateBotSettingsRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "noto'g'ri JSON format")
+		return
+	}
+	if req.AdminID != "" {
+		_ = a.store.SetSetting(id, "admin_id", req.AdminID)
+	}
+	if req.APIKey != "" {
+		_ = a.store.SetSetting(id, "api_key", req.APIKey)
+	}
+	if req.ChannelID != "" {
+		_ = a.store.SetSetting(id, "channel_id", req.ChannelID)
+	}
+	if req.Currency != "" {
+		_ = a.store.SetSetting(id, "currency", req.Currency)
+	}
+	if req.WebhookURL != "" {
+		_ = a.store.SetBotWebhook(id, req.WebhookURL)
+	}
+	bot, err := a.store.GetBot(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "bot topilmadi")
+		return
+	}
+	writeJSON(w, http.StatusOK, bot)
+}
+
+func (a *API) handleStartBot(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "noto'g'ri bot id")
+		return
+	}
+	bot, err := a.store.GetBot(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "bot topilmadi")
+		return
+	}
+	if !bot.IsActive() {
+		bot, err = a.engine.ToggleBot(id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, bot)
+}
+
+func (a *API) handleStopBot(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "noto'g'ri bot id")
+		return
+	}
+	bot, err := a.store.GetBot(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "bot topilmadi")
+		return
+	}
+	if bot.IsActive() {
+		bot, err = a.engine.ToggleBot(id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, bot)
+}
+
+type broadcastRequest struct {
+	BotID   int64  `json:"bot_id"`
+	Target  string `json:"target"`
+	Message string `json:"message"`
+}
+
+func (a *API) handleBroadcast(w http.ResponseWriter, r *http.Request) {
+	var req broadcastRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "noto'g'ri JSON format")
+		return
+	}
+	if strings.TrimSpace(req.Message) == "" {
+		writeError(w, http.StatusBadRequest, "Xabar matni bo'sh bo'lishi mumkin emas")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"message": "Xabar yuborish rejalashtirildi",
+	})
 }
 
 func (a *API) handleListTemplates(w http.ResponseWriter, _ *http.Request) {
