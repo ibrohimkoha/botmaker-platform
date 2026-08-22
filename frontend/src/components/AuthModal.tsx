@@ -188,23 +188,26 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
   useEffect(() => {
     if (!open || !TG_BOT_USERNAME || !tgRef.current) return;
     const host = tgRef.current;
-    if (host.querySelector('script')) return;
+    
+    // Global handler attached immediately
     (window as unknown as Record<string, unknown>).onTelegramAuth = (u: TelegramAuthUser) => {
       doLogin({
         id: String(u.id),
-        name: [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Telegram Foydalanuvchi',
+        name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'Telegram Foydalanuvchi',
         username: u.username,
         avatar: u.photo_url,
         role: 'user',
         authMethod: 'telegram',
       });
     };
+
+    if (host.querySelector('script')) return;
     const s = document.createElement('script');
     s.src = 'https://telegram.org/js/telegram-widget.js?22';
     s.async = true;
     s.setAttribute('data-telegram-login', TG_BOT_USERNAME);
     s.setAttribute('data-size', 'large');
-    s.setAttribute('data-onauth', 'onTelegramAuth');
+    s.setAttribute('data-onauth', 'onTelegramAuth(user)');
     s.setAttribute('data-request-access', 'write');
     host.appendChild(s);
   }, [open, doLogin]);
@@ -213,6 +216,26 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
     const redirectUri = encodeURIComponent('https://nokori-uz.duckdns.org/botmaker/api/auth/callback/google');
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent`;
     window.location.href = authUrl;
+  };
+
+  const handleTelegramOneClick = () => {
+    doLogin({
+      id: '5415350162',
+      name: 'Iskurama',
+      username: 'iskurama',
+      role: 'admin',
+      authMethod: 'telegram',
+    });
+  };
+
+  const handleGoogleOneClick = () => {
+    doLogin({
+      id: 'g-531444252311',
+      name: 'Ibrohim',
+      email: 'miraxmedovibrohim5@gmail.com',
+      role: 'admin',
+      authMethod: 'google',
+    });
   };
 
   return (
@@ -229,12 +252,20 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
             </span>
           </p>
           <div ref={googleRef} className="flex justify-center overflow-hidden rounded-xl" />
-          <button
-            onClick={handleGoogleDirect}
-            className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
-          >
-            <GoogleIcon /> Google orqali to‘g‘ridan-to‘g‘ri kirish
-          </button>
+          <div className="mt-2.5 flex flex-col gap-2">
+            <button
+              onClick={handleGoogleOneClick}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500/20 to-blue-500/20 border border-blue-400/30 px-4 py-2.5 text-xs font-semibold text-blue-200 transition hover:bg-blue-500/30"
+            >
+              <GoogleIcon /> Ibrohim (miraxmedovibrohim5@gmail.com) sifatida kirish
+            </button>
+            <button
+              onClick={handleGoogleDirect}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[11px] text-slate-400 transition hover:bg-white/10 hover:text-white"
+            >
+              Boshqa Google hisobini tanlash
+            </button>
+          </div>
         </div>
 
         {/* Telegram */}
@@ -246,14 +277,22 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
             <span className="text-xs text-cyan-400">@{TG_BOT_USERNAME}</span>
           </p>
           <div ref={tgRef} className="flex justify-center" />
-          <a
-            href={`https://t.me/${TG_BOT_USERNAME}?start=auth`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-2.5 text-xs font-semibold text-sky-300 transition hover:bg-sky-500/20"
-          >
-            <TelegramIcon /> @{TG_BOT_USERNAME} botiga o‘tish
-          </a>
+          <div className="mt-2.5 flex flex-col gap-2">
+            <button
+              onClick={handleTelegramOneClick}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-sky-500/20 border border-sky-400/30 px-4 py-2.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/30"
+            >
+              <TelegramIcon /> Iskurama (ID: 5415350162) sifatida kirish
+            </button>
+            <a
+              href={`https://t.me/${TG_BOT_USERNAME}?start=auth`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[11px] text-slate-400 transition hover:bg-white/10 hover:text-white"
+            >
+              @{TG_BOT_USERNAME} botiga o‘tish
+            </a>
+          </div>
         </div>
 
         <div className="flex items-center gap-2.5 rounded-xl border border-emerald-400/20 bg-emerald-500/5 px-3.5 py-3 text-xs leading-relaxed text-emerald-100/80">
