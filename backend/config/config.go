@@ -20,6 +20,35 @@ type Config struct {
 	AdminIDs []int64
 	// AI holds the LLM settings used by the ai_assistant template.
 	AI AIConfig
+	// GoogleOAuth configures the Google Sign-In integration.
+	GoogleOAuth GoogleOAuthConfig
+	// B2 configures the Backblaze B2 S3-compatible storage used for
+	// payment receipt uploads.
+	B2 B2Config
+	// SuperAdminID is the Telegram user ID of the platform super admin.
+	// This account is always granted the admin role on login.
+	SuperAdminID int64
+	// SessionSecret is the HMAC key used to sign session tokens issued
+	// by the auth handlers.
+	SessionSecret string
+}
+
+// GoogleOAuthConfig holds the credentials of the Google OAuth 2.0 client
+// used for "Sign in with Google".
+type GoogleOAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
+// B2Config holds the credentials of a Backblaze B2 bucket accessed via
+// its S3-compatible API.
+type B2Config struct {
+	Endpoint       string
+	Bucket         string
+	KeyID          string
+	ApplicationKey string
+	Region         string
 }
 
 // AIConfig configures the OpenAI-compatible chat API (DeepSeek by default)
@@ -45,6 +74,20 @@ func Load() Config {
 			APIKey:  getenv("AI_API_KEY", "sk-e95e7fa9df0e4ce2813ec7908b982e51"),
 			Model:   getenv("AI_MODEL", "deepseek-chat"),
 		},
+		GoogleOAuth: GoogleOAuthConfig{
+			ClientID:     getenv("GOOGLE_CLIENT_ID", ""),
+			ClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
+			RedirectURL:  getenv("GOOGLE_REDIRECT_URL", "https://nokori-uz.duckdns.org/botmaker/api/auth/callback/google"),
+		},
+		B2: B2Config{
+			Endpoint:       getenv("B2_ENDPOINT", "s3.us-east-005.backblazeb2.com"),
+			Bucket:         getenv("B2_BUCKET", "iskurama"),
+			KeyID:          getenv("B2_KEY_ID", ""),
+			ApplicationKey: getenv("B2_APPLICATION_KEY", ""),
+			Region:         getenv("B2_REGION", "us-east-005"),
+		},
+		SuperAdminID:  parseIntEnv("SUPER_ADMIN_ID", 5415350162),
+		SessionSecret: getenv("SESSION_SECRET", "botmaker-platform-session-secret-key-2026"),
 	}
 	for _, part := range strings.Split(getenv("ADMIN_IDS", ""), ",") {
 		part = strings.TrimSpace(part)
@@ -57,6 +100,18 @@ func Load() Config {
 		}
 	}
 	return cfg
+}
+
+func parseIntEnv(key string, fallback int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func getenv(key, fallback string) string {

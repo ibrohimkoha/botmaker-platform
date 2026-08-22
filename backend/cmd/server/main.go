@@ -32,7 +32,7 @@ func main() {
 		log.Fatalf("engine: %v", err)
 	}
 
-	api := handlers.NewAPI(eng, store)
+	api := handlers.NewAPI(eng, store, cfg)
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           api.Routes(),

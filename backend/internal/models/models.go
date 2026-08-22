@@ -72,8 +72,8 @@ type Stats struct {
 	LastActive       *time.Time `json:"last_active,omitempty"`
 }
 
-// User is a Telegram user that interacted with a bot.
-type User struct {
+// BotUser is a Telegram user that interacted with a bot.
+type BotUser struct {
 	ID         int64     `json:"id"`
 	BotID      int64     `json:"bot_id"`
 	TelegramID int64     `json:"telegram_id"`
@@ -83,6 +83,71 @@ type User struct {
 	IsAdmin    bool      `json:"is_admin"`
 	JoinedAt   time.Time `json:"joined_at"`
 	LastSeen   time.Time `json:"last_seen"`
+}
+
+// Platform account roles.
+const (
+	RoleAdmin = "admin"
+	RoleUser  = "user"
+)
+
+// User is a platform account that can sign in with Google or Telegram.
+// Its balance is topped up through approved deposits and spent on
+// platform services (e.g. custom repo templates).
+type User struct {
+	ID         int64     `json:"id"`
+	TelegramID int64     `json:"telegram_id,omitempty"`
+	GoogleID   string    `json:"google_id,omitempty"`
+	Email      string    `json:"email,omitempty"`
+	FullName   string    `json:"full_name,omitempty"`
+	AvatarURL  string    `json:"avatar_url,omitempty"`
+	Balance    int64     `json:"balance"`
+	Role       string    `json:"role"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// PaymentCard is a bank card shown to users as a manual transfer target.
+type PaymentCard struct {
+	ID         int64     `json:"id"`
+	CardNumber string    `json:"card_number"`
+	CardHolder string    `json:"card_holder"`
+	BankName   string    `json:"bank_name"`
+	IsActive   bool      `json:"is_active"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// Deposit statuses.
+const (
+	DepositPending  = "pending"
+	DepositApproved = "approved"
+	DepositRejected = "rejected"
+)
+
+// Deposit is a balance top-up request backed by a payment receipt.
+type Deposit struct {
+	ID           int64      `json:"id"`
+	UserID       int64      `json:"user_id"`
+	UserFullName string     `json:"user_full_name,omitempty"`
+	Amount       int64      `json:"amount"`
+	ReceiptURL   string     `json:"receipt_url,omitempty"`
+	Status       string     `json:"status"`
+	RejectReason string     `json:"reject_reason,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	ApprovedAt   *time.Time `json:"approved_at,omitempty"`
+}
+
+// CustomRepoTemplate is a template submitted by an admin and backed by
+// a git repository that the engine can clone.
+type CustomRepoTemplate struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	GitRepoURL  string    `json:"git_repo_url"`
+	Category    string    `json:"category,omitempty"`
+	Price       int64     `json:"price"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Broadcast statuses.

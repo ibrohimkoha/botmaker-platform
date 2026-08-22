@@ -189,7 +189,7 @@ func trackUser(opts Options, c tele.Context) {
 	if sender == nil {
 		return
 	}
-	u := &models.User{
+	u := &models.BotUser{
 		BotID:      opts.BotID,
 		TelegramID: sender.ID,
 		Username:   sender.Username,

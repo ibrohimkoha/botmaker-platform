@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
+	"botmaker-backend/config"
 	"botmaker-backend/internal/engine"
 	"botmaker-backend/internal/models"
 	"botmaker-backend/internal/storage"
@@ -18,11 +21,29 @@ import (
 type API struct {
 	engine *engine.Engine
 	store  *storage.Store
+	cfg    config.Config
+	b2     *storage.B2Uploader
+
+	mu          sync.Mutex
+	oauthStates map[string]time.Time
 }
 
 // NewAPI builds the handler set.
-func NewAPI(e *engine.Engine, s *storage.Store) *API {
-	return &API{engine: e, store: s}
+func NewAPI(e *engine.Engine, s *storage.Store, cfg config.Config) *API {
+	api := &API{
+		engine:      e,
+		store:       s,
+		cfg:         cfg,
+		oauthStates: map[string]time.Time{},
+	}
+	if cfg.B2.Endpoint != "" && cfg.B2.Bucket != "" && cfg.B2.KeyID != "" && cfg.B2.ApplicationKey != "" {
+		if up, err := storage.NewB2Uploader(cfg.B2.Endpoint, cfg.B2.Bucket, cfg.B2.KeyID, cfg.B2.ApplicationKey, cfg.B2.Region); err != nil {
+			log.Printf("[api] b2 uploader init failed: %v", err)
+		} else {
+			api.b2 = up
+		}
+	}
+	return api
 }
 
 // Routes returns the fully wired HTTP handler with CORS enabled.
@@ -38,12 +59,49 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("POST /api/bots/{id}/toggle", a.handleToggleBot)
 	mux.HandleFunc("POST /api/bots/{id}/start", a.handleStartBot)
 	mux.HandleFunc("POST /api/bots/{id}/stop", a.handleStopBot)
+	mux.HandleFunc("GET /api/bots/{id}/settings", a.handleGetBotSettings)
+	mux.HandleFunc("PUT /api/bots/{id}/settings", a.handleSaveBotSettings)
 	mux.HandleFunc("POST /api/broadcast", a.handleBroadcast)
 	mux.HandleFunc("POST /api/bots/{id}/broadcast", a.handleBroadcast)
 	mux.HandleFunc("GET /api/templates", a.handleListTemplates)
 	mux.HandleFunc("GET /api/stats", a.handleStats)
 	mux.HandleFunc("POST /api/webhook/{token}", a.handleWebhook)
 	mux.HandleFunc("POST /webhook/{token}", a.handleWebhook)
+
+	// Auth.
+	mux.HandleFunc("POST /api/auth/google", a.handleGoogleAuth)
+	mux.HandleFunc("GET /api/auth/callback/google", a.handleGoogleCallback)
+	mux.HandleFunc("POST /api/auth/telegram", a.handleTelegramAuth)
+	mux.HandleFunc("POST /api/auth/quick-login", a.handleQuickLogin)
+	mux.HandleFunc("GET /api/auth/me", a.handleMe)
+
+	// Deposits & Checks.
+	mux.HandleFunc("POST /api/deposits", a.handleCreateDeposit)
+	mux.HandleFunc("GET /api/deposits", a.handleListDeposits)
+	mux.HandleFunc("POST /api/payments/checks", a.handleCreateDeposit)
+	mux.HandleFunc("GET /api/payments/checks", a.handleListDeposits)
+	mux.HandleFunc("POST /api/admin/deposits/{id}/approve", a.handleApproveDeposit)
+	mux.HandleFunc("POST /api/admin/deposits/{id}/reject", a.handleRejectDeposit)
+	mux.HandleFunc("POST /api/payments/checks/{id}/approve", a.handleApproveDeposit)
+	mux.HandleFunc("POST /api/payments/checks/{id}/reject", a.handleRejectDeposit)
+
+	// Payment cards.
+	mux.HandleFunc("GET /api/cards", a.handleListCards)
+	mux.HandleFunc("POST /api/cards", a.handleCreateCard)
+	mux.HandleFunc("GET /api/settings/card", a.handleListCards)
+	mux.HandleFunc("POST /api/settings/card", a.handleCreateCard)
+	mux.HandleFunc("POST /api/admin/cards", a.handleCreateCard)
+
+	// Custom repo templates.
+	mux.HandleFunc("GET /api/admin/templates", a.handleListCustomTemplates)
+	mux.HandleFunc("POST /api/admin/templates", a.handleCreateCustomTemplate)
+	mux.HandleFunc("GET /api/templates/custom", a.handleListCustomTemplates)
+	mux.HandleFunc("POST /api/templates/custom", a.handleCreateCustomTemplate)
+
+	// Users.
+	mux.HandleFunc("GET /api/users", a.handleListUsers)
+	mux.HandleFunc("GET /api/admin/users", a.handleListUsers)
+
 	return withCORS(mux)
 }
 
