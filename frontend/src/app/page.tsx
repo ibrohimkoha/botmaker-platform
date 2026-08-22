@@ -331,7 +331,18 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const errJson = (await res.json()) as Record<string, string>;
+      if (errJson.error) msg = errJson.error;
+      else if (errJson.message) msg = errJson.message;
+      else if (errJson.warning) msg = errJson.warning;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }

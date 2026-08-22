@@ -36,6 +36,7 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("GET /api/templates", a.handleListTemplates)
 	mux.HandleFunc("GET /api/stats", a.handleStats)
 	mux.HandleFunc("POST /api/webhook/{token}", a.handleWebhook)
+	mux.HandleFunc("POST /webhook/{token}", a.handleWebhook)
 	return withCORS(mux)
 }
 
@@ -69,15 +70,16 @@ func (a *API) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 	req.Token = strings.TrimSpace(req.Token)
 	req.Template = strings.TrimSpace(req.Template)
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name maydoni bo'sh bo'lishi mumkin emas")
+		writeError(w, http.StatusBadRequest, "Bot nomi bo'sh bo'lishi mumkin emas")
 		return
 	}
 	if req.Token == "" {
-		writeError(w, http.StatusBadRequest, "token maydoni bo'sh bo'lishi mumkin emas")
+		writeError(w, http.StatusBadRequest, "Bot token bo'sh bo'lishi mumkin emas (@BotFather dan oling)")
 		return
 	}
-	if !a.engine.HasTemplate(req.Template) {
-		writeError(w, http.StatusBadRequest, "noma'lum template: "+req.Template)
+	normTpl := engine.NormalizeTemplate(req.Template)
+	if !a.engine.HasTemplate(normTpl) {
+		writeError(w, http.StatusBadRequest, "Noma'lum shablon: "+req.Template)
 		return
 	}
 
@@ -85,17 +87,12 @@ func (a *API) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 		Name:     req.Name,
 		Username: req.Username,
 		Token:    req.Token,
-		Template: req.Template,
+		Template: normTpl,
 		Status:   models.StatusActive,
 	}
 	if err := a.engine.AddBot(bot); err != nil {
-		// The record is kept (paused) so the operator can fix it later.
 		log.Printf("[api] create bot %q activation failed: %v", req.Name, err)
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"bot": bot,
-			"warning": "Bot saqlandi, lekin faollashtirib bo'lmadi (token yoki " +
-				"webhook xatosi). Holat: paused",
-		})
+		writeError(w, http.StatusBadRequest, "Botni faollashtirib bo'lmadi: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, bot)

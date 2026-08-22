@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 
 	tele "gopkg.in/telebot.v3"
@@ -72,9 +73,33 @@ func (e *Engine) RegisterBuiltinTemplates() {
 	}
 }
 
+// NormalizeTemplate converts user-supplied or alias template names to canonical identifiers.
+func NormalizeTemplate(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	switch s {
+	case "ai-chatbot", "ai_chatbot", "ai", "chatbot", "ai_assistant":
+		return models.TemplateAIAssistant
+	case "ecommerce", "ecommerce_shop", "shop", "store":
+		return models.TemplateEcommerceShop
+	case "feedback", "feedback_support", "support":
+		return models.TemplateFeedbackSupport
+	case "channel", "channel_manager", "obuna":
+		return models.TemplateChannelManager
+	case "visual-menu", "visual_menu", "custom_builder", "menu", "custom":
+		return models.TemplateCustomBuilder
+	case "cinema", "anitez":
+		return models.TemplateAniTez
+	case "anixultra", "anix_ultra":
+		return models.TemplateAniXUltra
+	default:
+		return s
+	}
+}
+
 // HasTemplate reports whether a template with the given name exists.
 func (e *Engine) HasTemplate(name string) bool {
-	_, ok := e.templates[name]
+	norm := NormalizeTemplate(name)
+	_, ok := e.templates[norm]
 	return ok
 }
 
@@ -204,7 +229,8 @@ func (e *Engine) DeleteWebhook(bot *tele.Bot) error {
 // activate creates the live bot, applies its template and points the
 // webhook at the shared endpoint.
 func (e *Engine) activate(b *models.Bot) error {
-	tmpl, ok := e.templates[b.Template]
+	normTpl := NormalizeTemplate(b.Template)
+	tmpl, ok := e.templates[normTpl]
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrTemplateMissing, b.Template)
 	}
@@ -262,5 +288,5 @@ func (e *Engine) deactivate(b *models.Bot) {
 }
 
 func (e *Engine) webhookURL(token string) string {
-	return fmt.Sprintf("%s/api/webhook/%s", e.cfg.WebhookBaseURL, token)
+	return fmt.Sprintf("%s/webhook/%s", e.cfg.WebhookBaseURL, token)
 }

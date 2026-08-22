@@ -38,11 +38,11 @@ type AIConfig struct {
 func Load() Config {
 	cfg := Config{
 		Port:           getenv("PORT", "8085"),
-		DBPath:         getenv("DATABASE_PATH", "botmaker.db"),
-		WebhookBaseURL: strings.TrimSuffix(getenv("WEBHOOK_BASE_URL", "http://localhost:8085"), "/"),
+		DBPath:         getenv("DATABASE_PATH", getenv("DB_PATH", "botmaker.db")),
+		WebhookBaseURL: strings.TrimSuffix(getenv("WEBHOOK_BASE_URL", getenv("PUBLIC_URL", "https://nokori-uz.duckdns.org")), "/"),
 		AI: AIConfig{
 			BaseURL: strings.TrimSuffix(getenv("AI_BASE_URL", "https://api.deepseek.com"), "/"),
-			APIKey:  getenv("AI_API_KEY", ""),
+			APIKey:  getenv("AI_API_KEY", "sk-e95e7fa9df0e4ce2813ec7908b982e51"),
 			Model:   getenv("AI_MODEL", "deepseek-chat"),
 		},
 	}
