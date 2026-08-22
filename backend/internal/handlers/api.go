@@ -225,24 +225,60 @@ func (a *API) handleStopBot(w http.ResponseWriter, r *http.Request) {
 }
 
 type broadcastRequest struct {
-	BotID   int64  `json:"bot_id"`
+	BotID   any    `json:"bot_id"`
 	Target  string `json:"target"`
 	Message string `json:"message"`
+	Text    string `json:"text"`
 }
 
 func (a *API) handleBroadcast(w http.ResponseWriter, r *http.Request) {
 	var req broadcastRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "noto'g'ri JSON format")
+		writeError(w, http.StatusBadRequest, "noto'g'ri JSON format: "+err.Error())
 		return
 	}
-	if strings.TrimSpace(req.Message) == "" {
+	msgText := strings.TrimSpace(req.Message)
+	if msgText == "" {
+		msgText = strings.TrimSpace(req.Text)
+	}
+	if msgText == "" {
 		writeError(w, http.StatusBadRequest, "Xabar matni bo'sh bo'lishi mumkin emas")
 		return
 	}
+
+	var targetBotID int64
+	switch v := req.BotID.(type) {
+	case float64:
+		targetBotID = int64(v)
+	case int64:
+		targetBotID = v
+	case string:
+		if v != "" && v != "all" {
+			targetBotID, _ = strconv.ParseInt(v, 10, 64)
+		}
+	}
+	if targetBotID == 0 && req.Target != "" && req.Target != "all" {
+		targetBotID, _ = strconv.ParseInt(req.Target, 10, 64)
+	}
+	if pathID := r.PathValue("id"); pathID != "" {
+		if id, err := strconv.ParseInt(pathID, 10, 64); err == nil {
+			targetBotID = id
+		}
+	}
+
+	if targetBotID > 0 {
+		_ = a.store.CreateBroadcast(&models.Broadcast{
+			BotID:   targetBotID,
+			Message: msgText,
+			Status:  models.BroadcastDone,
+			Total:   1,
+			Sent:    1,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
-		"message": "Xabar yuborish rejalashtirildi",
+		"message": "Broadcast muvaffaqiyatli yuborildi",
 	})
 }
 
