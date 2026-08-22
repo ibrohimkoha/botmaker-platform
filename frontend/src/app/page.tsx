@@ -179,6 +179,11 @@ function Dashboard() {
   };
 
   const openCreate = (template?: TemplateId) => {
+    if (!user) {
+      push('info', 'Yangi bot yaratish uchun avval tizimga kiring!');
+      setLoginOpen(true);
+      return;
+    }
     setCreateTemplate(template);
     setCreateOpen(true);
   };

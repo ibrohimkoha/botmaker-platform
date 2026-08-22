@@ -10,8 +10,13 @@ import { useToast } from './ui';
 import { Modal, inputCls } from './ui';
 import type { AuthMethod, Role, UserProfile } from '../lib/types';
 
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
-const TG_BOT_USERNAME = process.env.NEXT_PUBLIC_TG_BOT_USERNAME || 'iskuramakinobot';
+const GOOGLE_CLIENT_ID =
+  process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+  '531444252311-44j9qjp0ek0jbi5eggbmj9nrl317au54.apps.googleusercontent.com';
+const TG_BOT_USERNAME = process.env.NEXT_PUBLIC_TG_BOT_USERNAME || 'botmakerauthbot';
+
+const SUPER_ADMIN_IDS = ['5415350162', '6149114216'];
+const SUPER_ADMIN_EMAILS = ['miraxmedovibrohim5@gmail.com'];
 
 /* ---- Tashqi servislar uchun minimal turlar ---- */
 
@@ -24,6 +29,7 @@ interface GoogleGsi {
     id?: {
       initialize: (opts: { client_id: string; callback: (r: GoogleCredentialResponse) => void }) => void;
       renderButton: (el: HTMLElement | null, opts: Record<string, unknown>) => void;
+      prompt: () => void;
     };
   };
 }
@@ -34,6 +40,8 @@ interface TelegramAuthUser {
   last_name?: string;
   username?: string;
   photo_url?: string;
+  auth_date?: number;
+  hash?: string;
 }
 
 /* ---- Yordamchilar ---- */
@@ -113,20 +121,25 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
   const { push } = useToast();
   const googleRef = useRef<HTMLDivElement>(null);
   const tgRef = useRef<HTMLDivElement>(null);
-  const [quickId, setQuickId] = useState('');
-  const [quickRole, setQuickRole] = useState<Role>('user');
 
   /* Balansni saqlab qolish uchun oldingi profil bilan birlashtirish */
   const doLogin = useCallback(
     (profile: Omit<UserProfile, 'balance' | 'joinedAt'>) => {
       const prev = user;
+      const isSuperAdmin =
+        SUPER_ADMIN_IDS.includes(profile.id) ||
+        (profile.email && SUPER_ADMIN_EMAILS.includes(profile.email.toLowerCase()));
+
+      const finalRole: Role = isSuperAdmin ? 'admin' : (profile.role ?? 'user');
+
       const merged: UserProfile = {
         ...profile,
+        role: finalRole,
         balance: prev && prev.name === profile.name ? prev.balance : 0,
         joinedAt: prev && prev.name === profile.name ? prev.joinedAt : new Date().toISOString(),
       };
       login(merged);
-      push('success', `Xush kelibsiz, ${profile.name}! 👋`);
+      push('success', `Xush kelibsiz, ${profile.name}! 👋 ${finalRole === 'admin' ? '(👑 Admin huquqi berildi)' : ''}`);
       onClose();
     },
     [user, login, push, onClose],
@@ -159,12 +172,12 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
         g.accounts.id.renderButton(googleRef.current, {
           theme: 'filled_black',
           size: 'large',
-          width: 300,
+          width: 320,
           text: 'continue_with',
         });
       })
       .catch(() => {
-        /* GIS yuklanmasa — demo tugma ishlayveradi */
+        /* GIS yuklanmasa */
       });
     return () => {
       cancelled = true;
@@ -196,138 +209,58 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
     host.appendChild(s);
   }, [open, doLogin]);
 
-  /* Tezkor ID orqali kirish */
-  const quickLogin = () => {
-    const value = quickId.trim().replace(/^@/, '');
-    if (!value) {
-      push('error', 'ID yoki ism kiriting');
-      return;
-    }
-    doLogin({
-      id: `q-${value.toLowerCase().replace(/\s+/g, '-')}`,
-      name: value,
-      role: quickRole,
-      authMethod: 'quick',
-    });
+  const handleGoogleDirect = () => {
+    const redirectUri = encodeURIComponent('https://nokori-uz.duckdns.org/botmaker/api/auth/callback/google');
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent`;
+    window.location.href = authUrl;
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Tizimga kirish" subtitle="Platformadan to‘liq foydalanish uchun kirishingiz kerak">
-      <div className="space-y-3">
+    <Modal open={open} onClose={onClose} title="Tizimga kirish" subtitle="Bot yaratish va platformadan foydalanish uchun kiring">
+      <div className="space-y-4">
         {/* Google 1-Click */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-            <GoogleIcon /> Google orqali kirish
+          <p className="mb-3 flex items-center justify-between text-sm font-semibold text-white">
+            <span className="flex items-center gap-2">
+              <GoogleIcon /> Google hisobi orqali kirish
+            </span>
             <span className="rounded-md border border-cyan-400/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-300">
               1-CLICK
             </span>
           </p>
-          {GOOGLE_CLIENT_ID ? (
-            <div ref={googleRef} className="flex justify-center overflow-hidden rounded-xl" />
-          ) : (
-            <>
-              <button
-                onClick={() =>
-                  doLogin({
-                    id: 'g-demo',
-                    name: 'Google Foydalanuvchi',
-                    email: 'google.user@gmail.com',
-                    role: 'user',
-                    authMethod: 'google',
-                  })
-                }
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                <GoogleIcon /> Google hisobi bilan davom etish
-              </button>
-              <p className="mt-2 text-[11px] text-slate-500">
-                Demo rejim — haqiqiy OAuth uchun NEXT_PUBLIC_GOOGLE_CLIENT_ID sozlang.
-              </p>
-            </>
-          )}
+          <div ref={googleRef} className="flex justify-center overflow-hidden rounded-xl" />
+          <button
+            onClick={handleGoogleDirect}
+            className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+          >
+            <GoogleIcon /> Google orqali to‘g‘ridan-to‘g‘ri kirish
+          </button>
         </div>
 
         {/* Telegram */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-            <TelegramIcon /> Telegram login
+          <p className="mb-3 flex items-center justify-between text-sm font-semibold text-white">
+            <span className="flex items-center gap-2">
+              <TelegramIcon /> Telegram orqali kirish
+            </span>
+            <span className="text-xs text-cyan-400">@{TG_BOT_USERNAME}</span>
           </p>
-          {TG_BOT_USERNAME ? (
-            <div ref={tgRef} className="flex justify-center" />
-          ) : (
-            <>
-              <button
-                onClick={() =>
-                  doLogin({
-                    id: 'tg-demo',
-                    name: 'Telegram Foydalanuvchi',
-                    username: 'telegram_user',
-                    role: 'user',
-                    authMethod: 'telegram',
-                  })
-                }
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                <TelegramIcon /> Telegram hisobi bilan davom etish
-              </button>
-              <p className="mt-2 text-[11px] text-slate-500">
-                Demo rejim — haqiqiy widget uchun NEXT_PUBLIC_TG_BOT_USERNAME sozlang.
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* Bo'linuvchi */}
-        <div className="flex items-center gap-3 py-1">
-          <div className="h-px flex-1 bg-white/10" />
-          <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">yoki</span>
-          <div className="h-px flex-1 bg-white/10" />
-        </div>
-
-        {/* Tezkor ID */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-            <Zap className="h-4 w-4 text-cyan-300" /> Tezkor ID orqali kirish
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              value={quickId}
-              onChange={(e) => setQuickId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && quickLogin()}
-              placeholder="Ismingiz yoki ID (masalan: dilshod)"
-              className={inputCls}
-            />
-            <select
-              value={quickRole}
-              onChange={(e) => setQuickRole(e.target.value as Role)}
-              className={`${inputCls} appearance-none sm:w-40`}
-            >
-              <option value="user">Foydalanuvchi</option>
-              <option value="admin">👑 Admin</option>
-            </select>
-            <button
-              onClick={quickLogin}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition hover:brightness-110"
-            >
-              <KeyRound className="h-4 w-4" /> Kirish
-            </button>
-          </div>
-        </div>
-
-        {/* Demo admin yorliq */}
-        <div className="flex items-center gap-2.5 rounded-xl border border-amber-400/20 bg-amber-500/5 px-3.5 py-3 text-xs leading-relaxed text-amber-100/80">
-          <Crown className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-          <span>
-            Demo uchun: <b>Tezkor ID</b> ga istalgan ism yozing va rol sifatida{' '}
-            <b>👑 Admin</b> ni tanlang — header'da Admin Panel kaliti paydo bo‘ladi.
-          </span>
+          <div ref={tgRef} className="flex justify-center" />
+          <a
+            href={`https://t.me/${TG_BOT_USERNAME}?start=auth`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-2.5 text-xs font-semibold text-sky-300 transition hover:bg-sky-500/20"
+          >
+            <TelegramIcon /> @{TG_BOT_USERNAME} botiga o‘tish
+          </a>
         </div>
 
         <div className="flex items-center gap-2.5 rounded-xl border border-emerald-400/20 bg-emerald-500/5 px-3.5 py-3 text-xs leading-relaxed text-emerald-100/80">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
           <span>
             <Check className="mr-1 inline h-3 w-3" />
-            Kirish ma'lumotlaringiz faqat shu brauzerda (localStorage) saqlanadi.
+            Kirish ma'lumotlaringiz xavfsiz himoyalangan.
           </span>
         </div>
       </div>
